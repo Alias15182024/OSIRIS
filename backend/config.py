@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     debug: bool = False
     host_id: str = "osiris-dev-host"
 
-    model_config = {"env_prefix": "OSIRIS_"}
+    model_config = {"env_prefix": "OSIRIS_", "env_file": ".env"}
 
 
 settings = Settings()
