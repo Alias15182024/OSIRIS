@@ -181,6 +181,33 @@ process activity:
   process identity resolution and event UUID assignment are owned exclusively by downstream
   layers.
 
+### 5.2 Filesystem Collector (`fs`)
+
+The Filesystem Collector (`collectors/filesystem/`) is the Phase 1 Linux collector for
+filesystem activity:
+
+- **Notification Mechanism**: Linux kernel `inotify` subsystem via standard library `ctypes` wrapper.
+- **Observed Events**:
+  - `filesystem.create` (action: `create`): File or directory created in a watched path.
+  - `filesystem.modify` (action: `modify`): File contents modified or metadata altered.
+  - `filesystem.delete` (action: `delete`): File or directory deleted.
+  - `filesystem.move` (action: `move`): File or directory renamed or moved.
+- **Rename Correlation**: Correlates inotify `cookie` identifiers across `IN_MOVED_FROM`
+  and `IN_MOVED_TO` events into a unified `filesystem.move` observation with both
+  `from_path` and `to_path` recorded in the payload. Unmatched move notifications
+  are captured deterministically.
+- **Object Context**: Distinguishes files vs directories (`object_type`), records target path
+  (`object_path`), and captures inode (`payload["inode"]`) when the path is accessible.
+- **Platform Policy**: Strictly Linux-only for real collection. Instantiation with default
+  backend on non-Linux platforms raises `PlatformError`. Pluggable mock backend is supported
+  for deterministic cross-platform unit testing.
+- **Timestamp Semantics**: Inotify does not provide kernel event timestamps. The observation
+  timestamp reflects collection time and is marked with `payload["timestamp_source"] = "collection_time"`
+  per §4.3 Rule 3.
+- **Contract Boundary**: Emits `RawObservation` with `source="fs"` and `process_id=None`.
+  Validation, timestamp UTC conversion, event UUID assignment, and persistence are owned
+  exclusively by the Event Processing Layer.
+
 ---
 
 ## 6. Entity Relationships
