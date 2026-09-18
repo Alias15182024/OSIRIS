@@ -340,3 +340,66 @@ using a hash of key event fields.
 **Boundary:** Steps 1–2 are the collector's responsibility. Steps 4–8 are
 exclusively the Event Processing Layer's responsibility. No other layer may
 assign event IDs or perform final normalization.
+
+---
+
+## 11. Event Processing Implementation Contract
+
+The Event Processing Layer (`backend/services/events/`) implements the contract
+between raw collector observations and PostgreSQL persistence.
+
+### 11.1 Raw Observation Boundary (`RawObservation`)
+
+Collectors submit observations conforming to `RawObservation`. This model
+is independent of the SQLAlchemy persistence model:
+
+- Required fields: `source`, `host_id`, `event_type`, `action`
+- Optional context: `observed_at`, `uid`, `username`, `pid`, `ppid`, `command`, `process_id`, `object_type`, `object_path`, `success`, `result`
+- Source-specific extensibility: `payload` (JSON object)
+
+### 11.2 Validation Rules (`validator.py`)
+
+Validation runs before normalization and aggregates all errors:
+
+1. `source`, `event_type`, and `action` must be non-empty strings
+2. `severity` must belong to the canonical set: `info`, `low`, `medium`, `high`, `critical`
+3. `observed_at` is required, must parse as a valid timestamp, and must be timezone-aware
+4. `uid`, `pid`, and `ppid` must be non-negative integers when present (`>= 0`)
+5. Malformed observations are rejected with explicit, actionable error messages
+
+### 11.3 Timestamp Normalization Policy (`normalizer.py`)
+
+All timestamps entering OSIRIS must be normalized to timezone-aware UTC:
+
+1. Timezone-aware timestamps (`datetime` or ISO 8601 string with offset) are converted to UTC (`timezone.utc`)
+2. Naive timestamps (lacking timezone information) are **explicitly rejected**; OSIRIS does not guess or assume local timezones
+3. Ingestion timestamp (`ingested_at`) is assigned by the normalizer at processing time in UTC
+
+### 11.4 Event ID Ownership
+
+The Event Processing Layer exclusively assigns the unique event UUID (`id`).
+Collectors must never assign or control the authoritative OSIRIS event UUID.
+
+### 11.5 Enrichment Boundary (`enricher.py`)
+
+In Phase 1, enrichment is deterministic and self-contained:
+
+- Strips and lowercases `source` and `event_type` for canonical formatting
+- Strips extraneous whitespace from `username`
+- Extracts `command` from `payload` if omitted from the top-level actor context
+- Leaves live `/proc` lookups and runtime entity resolution as planned future extensions (Milestone 1.4+)
+
+### 11.6 Normalized Event (`NormalizedEvent`)
+
+The authoritative domain representation of a processed event. Enforces type
+invariants and non-negative constraints via Pydantic validators before persistence.
+
+### 11.7 Persistence Boundary (`EventRepository`)
+
+The `EventRepository` maps `NormalizedEvent` to the SQLAlchemy `Event` ORM model:
+
+- Operates within caller-managed database sessions/transactions
+- Flushes immediately to detect constraint violations (e.g., foreign key errors)
+- Supports single-event and batch persistence without partial silent writes
+- Rolls back atomically on error
+
