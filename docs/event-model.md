@@ -161,6 +161,26 @@ Future sources may be added by implementing new collectors that conform to
 the `BaseCollector` interface. No changes to the event model or downstream
 modules are required.
 
+### 5.1 Process Collector (`proc`)
+
+The Process Collector (`collectors/process/`) is the Phase 1 Linux collector for
+process activity:
+
+- **Source Filesystem**: Linux `/proc/<pid>/` (`stat`, `cmdline`, `status`, `exe`).
+- **Identity Keying**: Tracks processes via `(pid, starttime)` composite key.
+  `starttime` (clock ticks since boot from `/proc/<pid>/stat`) prevents PID
+  reuse from incorrectly merging two distinct process lifecycles.
+- **Lifecycle Events**:
+  - `process.start` (action: `start`): Emitted when a new `(pid, starttime)` is observed.
+  - `process.end` (action: `exit`): Emitted when a previously observed process disappears,
+    preserving the last-known process metadata without attempting to read `/proc` post-exit.
+- **Platform Policy**: Strictly Linux-only. Instantiation or collection against default
+  `/proc` on non-Linux platforms raises `PlatformError`. Custom directory injection is
+  supported strictly for unit testing.
+- **Contract Boundary**: Emits `RawObservation` with `process_id=None`. OSIRIS internal
+  process identity resolution and event UUID assignment are owned exclusively by downstream
+  layers.
+
 ---
 
 ## 6. Entity Relationships
