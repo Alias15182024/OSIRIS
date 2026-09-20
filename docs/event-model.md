@@ -208,6 +208,45 @@ filesystem activity:
   Validation, timestamp UTC conversion, event UUID assignment, and persistence are owned
   exclusively by the Event Processing Layer.
 
+### 5.3 Resource Collector (`resource`)
+
+The Resource Collector (`collectors/resource/`) is the Phase 1 Linux collector for
+system resource metrics:
+
+- **Source Subsystem**: Linux `/proc` pseudo-filesystem (`/proc/stat`, `/proc/loadavg`,
+  `/proc/meminfo`, `/proc/diskstats`) and standard library `os.statvfs` (strictly zero
+  external dependencies; no `psutil`).
+- **Observed Events**:
+  - `resource.snapshot` (action: `snapshot`): Canonical consolidated system observation
+    combining CPU utilization, load averages, memory metrics, disk I/O bytes, and disk
+    usage into a single structured observation.
+  - Granular events (action: `snapshot`): `resource.cpu`, `resource.memory`, and `resource.disk`
+    available via `collect_observations(granular=True)` matching §2.
+- **CPU Differential Utilization**:
+  - On the first collection cycle, records baseline CPU ticks from `/proc/stat` and returns
+    `cpu_percent = None`.
+  - On subsequent cycles, calculates system-wide CPU utilization over `[0.0, 100.0]` from tick
+    deltas: `(1.0 - (delta_idle / delta_total)) * 100.0`.
+- **Memory Formulation**:
+  - Core metrics: `memory_total` (`MemTotal * 1024`), `memory_used` (`(MemTotal - MemAvailable) * 1024`),
+    and `memory_percent` (`round((memory_used / memory_total) * 100.0, 2)`).
+  - Supplementary payload metrics: `memory_available`, `memory_free`, `buffers`, `cached`,
+    `swap_total`, `swap_used`, `swap_percent`.
+- **Disk I/O Aggregation**:
+  - Aggregates whole physical/virtual block devices (`sd*`, `nvme*n*`, `vd*`, `xvd*`, `hd*`,
+    `mmcblk*`) matching `WHOLE_DISK_PATTERN`, excluding partitions, loop devices, ramdisks,
+    and device-mapper entries to prevent double counting.
+  - Converts sector counts to bytes using standard Linux 512 bytes per sector.
+- **Platform Policy**: Strictly Linux-only for live collection. Accessing default `/proc` on
+  non-Linux platforms raises `PlatformError`. Injection of custom `proc_dir` and `statvfs_fn`
+  is supported strictly for deterministic unit testing.
+- **Timestamp Semantics**: Metrics represent point-in-time state at collection; timestamp is
+  marked with `payload["timestamp_source"] = "collection_time"` per §4.3 Rule 3.
+- **Contract Boundary**: Emits `RawObservation` with `source="resource"`, `process_id=None`,
+  `pid=None`, `uid=None`. Direct persistence into `resource_snapshots` is decoupled and
+  outside Milestone 1.4B; all observations flow through the authoritative Event Processing
+  Layer.
+
 ---
 
 ## 6. Entity Relationships
