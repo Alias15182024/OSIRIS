@@ -247,6 +247,45 @@ system resource metrics:
   outside Milestone 1.4B; all observations flow through the authoritative Event Processing
   Layer.
 
+### 5.4 Collector Orchestration (`CollectorOrchestrator`)
+
+The Collector Orchestrator (`collectors/orchestrator.py`) is the coordinating layer
+for Phase 1 collectors:
+
+- **Coordinated Collectors**: Manages all active Phase 1 collectors (`ProcessCollector`,
+  `ResourceCollector`, `FilesystemCollector`) under a unified `host_id`.
+- **Scheduling & Concurrency**:
+  - Drains the event-driven filesystem inotify buffer on every scheduler tick (e.g., 0.5s).
+  - Polls process and resource collectors according to configurable intervals (`process_interval`,
+    `resource_interval`).
+  - Supports both synchronous, deterministic single-pass cycles (`run_cycle()`) and continuous
+    background execution via a daemon worker thread (`start()` / `stop()`).
+  - **Cycle Serialization**: Execution within `run_cycle()` is protected by a dedicated `_cycle_lock`.
+    Concurrent invocations (e.g. background worker loop alongside manual forced cycles) are strictly
+    serialized without interleaving collection or processing paths. The cycle lock is not held across
+    `start()` or `stop()`.
+- **Injectable Time Sources**:
+  - Accepts injectable `monotonic_clock` and `wall_clock` callables. All interval gating and cycle
+    durations use the monotonic clock, allowing tests to advance time deterministically without sleeps.
+- **Startup Sequence & Rollback**:
+  - Explicit 4-step sequence: construct collectors → register filesystem watches → start collectors
+    → enter `RUNNING` state.
+  - If watch registration or collector startup fails, immediately rolls back all initialized collectors,
+    closing inotify file descriptors and watches cleanly without resource leaks.
+- **Error Containment & Segmentation**:
+  - `collector_errors`: Strictly limited to collector source failures (`"proc"`, `"resource"`, `"fs"`).
+    A failure in one collector does not prevent remaining collectors from running.
+  - `processing_errors`: Observation validation or normalization failures reported by `EventProcessor.process_batch()`.
+  - `sink_errors`: Isolated downstream persistence or dispatch errors (`sink_errors["repository"]`,
+    `sink_errors["callback"]`), ensuring sink failures do not pollute collector error telemetry.
+  - `CycleResult.success`: Evaluates to `True` only when `collector_errors`, `processing_errors`, and
+    `sink_errors` are all empty.
+- **Contract Boundary & Persistence**:
+  - Aggregates `RawObservation` objects and passes them to `EventProcessor`. Does not assign UUIDs,
+    normalize timestamps, or enrich data.
+  - Does not manage database sessions or transactions. An externally managed `EventRepository`
+    or `event_callback` may be injected to receive normalized events.
+
 ---
 
 ## 6. Entity Relationships
