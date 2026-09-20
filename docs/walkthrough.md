@@ -76,3 +76,44 @@ All 11 live Linux integration tests executed and passed on the Ubuntu 22.04 ARM6
   ```
   - 183 unit tests passed.
   - 19 skipped: 11 Linux integration tests (cleanly skipped due to absence of Linux `/proc` and `inotify`), 7 PostgreSQL tests (offline), 1 SQLite CHECK constraint test.
+
+### 2.4 Verification Command Results
+
+#### Ubuntu 22.04 ARM64 VM (Phase 1.4E Live Environment)
+1. Full test suite:
+   ```bash
+   $ pytest -q
+   194 passed, 8 skipped in 1.81s
+   ```
+2. Linux integration test suite:
+   ```bash
+   $ pytest -q \
+       tests/integration/test_linux_process_collector.py \
+       tests/integration/test_linux_filesystem_collector.py \
+       tests/integration/test_linux_resource_collector.py \
+       tests/integration/test_linux_collector_orchestrator.py
+   11 passed in 1.11s
+   ```
+
+#### macOS/Darwin (Development Host)
+1. Full test suite:
+   ```bash
+   $ pytest -q
+   183 passed, 19 skipped in 0.59s
+   ```
+   *(183 unit tests passed; 19 skipped cleanly: 11 Linux integration tests, 7 offline PostgreSQL tests, 1 SQLite CHECK constraint test).*
+2. Linux integration test suite:
+   ```bash
+   $ pytest -q \
+       tests/integration/test_linux_process_collector.py \
+       tests/integration/test_linux_filesystem_collector.py \
+       tests/integration/test_linux_resource_collector.py \
+       tests/integration/test_linux_collector_orchestrator.py
+   11 skipped in 0.03s
+   ```
+   *(Cleanly skipped due to absence of Linux `/proc` and `inotify`).*
+3. Whitespace and diff check:
+   ```bash
+   $ git diff --check
+   # Clean (0 errors, no output)
+   ```
