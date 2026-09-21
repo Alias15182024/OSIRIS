@@ -125,24 +125,56 @@ the Event Processing Layer (Milestone 1.3).
 
 ---
 
-### Milestone 1.5 — Backend API (Basic)
+### Milestone 1.5 — Backend API (Completed)
 
 **Goal:** Expose collected data through REST endpoints.
 
-- [ ] Authentication (login, token issuance)
-- [ ] Event listing and filtering endpoints
-- [ ] Process listing endpoint
-- [ ] Resource snapshot endpoint
-- [ ] File listing endpoint
-- [ ] Health and status endpoints
-- [ ] Input validation on all endpoints
-- [ ] Error handling and structured error responses
+- [x] Authentication (login, token issuance, PBKDF2-HMAC-SHA256 password hashing, HMAC-SHA256 signed access tokens, application audit-log recorder)
+- [x] Event listing and retrieval endpoints (`GET /api/events`, `GET /api/events/{event_id}`)
+- [x] Process listing and retrieval endpoints (`GET /api/processes`, `GET /api/processes/{process_id}`)
+- [x] Resource snapshot listing endpoint (`GET /api/resources`)
+- [x] File listing endpoint with directory-boundary path-prefix filtering (`GET /api/files`)
+- [x] Health and status endpoints (`GET /health`, `GET /api/status`)
+- [x] Input validation on all endpoints (Pydantic v2 schemas)
+- [x] Error handling, structured error responses, and database error safety (sanitized status on disconnect)
+- [x] Database seed compatibility fix (`database/seeds/seed_phase1.py` aligned with PBKDF2 hashing)
 
 **Testing Checkpoint:**
 - API endpoints return correct data
-- Authentication is enforced
-- Invalid inputs are rejected
-- API documentation is auto-generated (OpenAPI/Swagger)
+- Authentication is enforced (401 on protected endpoints without/with invalid bearer tokens)
+- Invalid inputs are rejected (422 validation errors on malformed parameters)
+- API documentation is auto-generated (OpenAPI/Swagger 3.1.0 verified at `/openapi.json`)
+- All unit and integration tests pass cleanly
+
+**Milestone 1.5 Validation Evidence:**
+- **Environment:** macOS Darwin (Apple Silicon) with PostgreSQL 18.6 (Homebrew)
+- **Full Test Suite:** 331 passed, 12 skipped in 2.63s
+  - 319 unit tests passed across database, event processing, collectors, orchestrator, security, schemas, dependencies, routes, and seed fixtures.
+  - 7 integration tests passed against live PostgreSQL (`tests/integration/test_event_persistence.py`).
+  - 12 skipped: 11 Linux integration tests (skipped on macOS due to lack of Linux `/proc`/`inotify`) and 1 SQLite CHECK constraint test.
+  - 0 failures, 0 errors.
+- **Phase 1.5 Focused Suite:** 141 passed in 2.14s
+  - `tests/unit/test_security.py` (22 passed)
+  - `tests/unit/test_schemas.py` (33 passed)
+  - `tests/unit/test_api_deps.py` (16 passed)
+  - `tests/unit/test_api_auth.py` (12 passed)
+  - `tests/unit/test_api_status.py` (6 passed)
+  - `tests/unit/test_api_events.py` (18 passed)
+  - `tests/unit/test_api_processes.py` (14 passed)
+  - `tests/unit/test_api_resources.py` (4 passed)
+  - `tests/unit/test_api_files.py` (14 passed)
+  - `tests/unit/test_seed_phase1.py` (2 passed)
+- **Live PostgreSQL 18.6 API Smoke Test (`osiris_dev`):**
+  - `GET /health` -> 200 OK
+  - `GET /api/status` -> 200 OK (`database: connected`)
+  - `POST /api/auth/login` -> 200 OK (issued bearer access token; recorded login audit log in `app_audit_log`)
+  - `GET /api/auth/me` -> 200 OK (returned authenticated admin user details)
+  - `GET /api/events` -> 200 OK (paginated envelope, total: 0)
+  - `GET /api/processes` -> 200 OK (paginated envelope, total: 1)
+  - `GET /api/resources` -> 200 OK (paginated envelope, total: 1)
+  - `GET /api/files` -> 200 OK (paginated envelope, total: 1)
+  - Unauthenticated / malformed requests -> 401 Unauthorized
+  - Note: Development admin credential is configured with `"changeme"` for development/testing only; it must never be used in production environments.
 
 ---
 

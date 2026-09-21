@@ -72,10 +72,12 @@ All 11 live Linux integration tests executed and passed on the Ubuntu 22.04 ARM6
 
 - **Development Host (macOS Darwin) Test Suite Results**:
   ```text
-  183 passed, 19 skipped in 0.59s
+  190 passed, 12 skipped in 0.59s
   ```
-  - 183 unit tests passed.
-  - 19 skipped: 11 Linux integration tests (cleanly skipped due to absence of Linux `/proc` and `inotify`), 7 PostgreSQL tests (offline), 1 SQLite CHECK constraint test.
+  - 190 tests passed.
+  - 12 skipped:
+    - 11 Linux integration tests (cleanly skipped due to absence of Linux `/proc` and `inotify`)
+    - 1 SQLite CHECK constraint test
 
 ### 2.4 Verification Command Results
 
@@ -99,9 +101,9 @@ All 11 live Linux integration tests executed and passed on the Ubuntu 22.04 ARM6
 1. Full test suite:
    ```bash
    $ pytest -q
-   183 passed, 19 skipped in 0.59s
+   190 passed, 12 skipped in 0.59s
    ```
-   *(183 unit tests passed; 19 skipped cleanly: 11 Linux integration tests, 7 offline PostgreSQL tests, 1 SQLite CHECK constraint test).*
+   *(190 passed; 12 skipped cleanly: 11 Linux integration tests, 1 SQLite CHECK constraint test).*
 2. Linux integration test suite:
    ```bash
    $ pytest -q \
@@ -117,3 +119,110 @@ All 11 live Linux integration tests executed and passed on the Ubuntu 22.04 ARM6
    $ git diff --check
    # Clean (0 errors, no output)
    ```
+
+---
+
+# OSIRIS Milestone 1.5: Backend REST API Walkthrough
+
+## Summary of Completed Work
+Milestone 1.5 (Backend REST API) provides authenticated, validated RESTful HTTP endpoints exposing OSIRIS observational data (events, processes, system resources, and files) backed by PostgreSQL and FastAPI.
+
+All Phase 1.5 components (Steps 1 through 4E, along with database seeding compatibility) have been implemented, verified through automated unit tests, validated against OpenAPI 3.1.0 specifications, and exercised against a live PostgreSQL 18.6 instance on macOS Darwin.
+
+---
+
+## 1. Components Implemented
+
+### 1.1 Security & Cryptographic Utilities ([`backend/api/security.py`](file:///Users/alias/Desktop/OSIRIS/backend/api/security.py))
+- **Password Hashing:** PBKDF2-HMAC-SHA256 standard library implementation (`100,000` iterations, 16-byte cryptographically secure salt) with constant-time verification (`hmac.compare_digest`). Formatted as `pbkdf2_sha256$<iterations>$<salt_hex>$<hash_hex>`.
+- **Token Issuance & Verification:** Lightweight HMAC-SHA256 signed access tokens utilizing URL-safe Base64 encoding. Supports token expiration (`exp`), subject claims (`sub`), username, and role attributes with tampered signature detection.
+- **Audit Logging Helper:** Helper `record_audit_log()` recording structured authentication and administrative events into PostgreSQL table `app_audit_log`.
+
+### 1.2 Pydantic API Schemas ([`backend/api/schemas/`](file:///Users/alias/Desktop/OSIRIS/backend/api/schemas/))
+- **Pydantic v2 Models:** Configured with `from_attributes=True` for seamless ORM entity serialization.
+- **Authentication:** `LoginRequest`, `TokenResponse`, `UserResponse`.
+- **Status:** `StatusResponse` reporting system health, version, host ID, and database connectivity.
+- **Observational Schemas:**
+  - `EventResponse`, `EventQueryParams`, `PaginatedEventResponse`
+  - `ProcessResponse`, `ProcessQueryParams`, `PaginatedProcessResponse`
+  - `ResourceSnapshotResponse`, `ResourceSnapshotQueryParams`, `PaginatedResourceSnapshotResponse`
+  - `FileResponse`, `FileQueryParams`, `PaginatedFileResponse`
+- **Standardized Pagination:** All collection queries share a consistent envelope: `{ total: int, items: list[...], limit: int, offset: int }`.
+- **Files API Field Contract:** `FileResponse` strictly exposes only the approved Phase 1.5 fields: `id`, `host_id`, `path`, `inode`, `file_type`, `first_seen_at`, `last_seen_at`, and `created_at`.
+
+### 1.3 API & Database Dependencies ([`backend/api/deps.py`](file:///Users/alias/Desktop/OSIRIS/backend/api/deps.py))
+- **`get_db()`:** FastAPI generator yielding a SQLAlchemy `Session` from `SessionLocal` with guaranteed session teardown in `finally`.
+- **`get_current_user()`:** Bearer token authentication dependency using `HTTPBearer`. Decodes token claims, validates user identity and `is_active` status against `AppUser`, and raises HTTP 401 on missing, malformed, expired, or tampered credentials.
+
+### 1.4 REST Route Handlers ([`backend/api/routes/`](file:///Users/alias/Desktop/OSIRIS/backend/api/routes/))
+- **Public Endpoints:**
+  - `GET /health` &mdash; Lightweight liveness check (`backend/main.py`).
+  - `GET /api/status` &mdash; Detailed platform health reporting database status (`connected` / `disconnected`), sanitized against internal database credential leakage.
+- **Authentication Routes (`backend/api/routes/auth.py`):**
+  - `POST /api/auth/login` &mdash; Authenticates credentials against `AppUser`, issues signed access token, and writes an audit log entry.
+  - `GET /api/auth/me` &mdash; Returns current authenticated user profile.
+- **Events API (`backend/api/routes/events.py`):**
+  - `GET /api/events` &mdash; Filterable by `host_id`, `start_time`, `end_time`, `source`, `event_type`, `severity`, `process_id`, `pid`, `username`, `success`. Deterministic ordering: `timestamp ASC, id ASC`.
+  - `GET /api/events/{event_id}` &mdash; Single event lookup with 404 handling.
+- **Processes API (`backend/api/routes/processes.py`):**
+  - `GET /api/processes` &mdash; Filterable by `host_id`, `pid`, `ppid`, `linux_user_id`, `command` substring, `state`. Deterministic ordering: `started_at ASC, id ASC`.
+  - `GET /api/processes/{process_id}` &mdash; Single process lookup with 404 handling.
+- **Resources API (`backend/api/routes/resources.py`):**
+  - `GET /api/resources` &mdash; Filterable by `host_id`, `start_time`, `end_time`. Deterministic ordering: `timestamp ASC, id ASC`.
+- **Files API (`backend/api/routes/files.py`):**
+  - `GET /api/files` &mdash; Filterable by `host_id`, `file_type`, and `path` prefix. Directory boundaries are strictly enforced (e.g. `/tmp` matches `/tmp` and `/tmp/file.txt`, but never `/tmp2/file.txt`), with SQL wildcards (`%`, `_`) safely escaped. Deterministic ordering: `first_seen_at ASC, id ASC`.
+
+### 1.5 Database Seed Compatibility ([`database/seeds/seed_phase1.py`](file:///Users/alias/Desktop/OSIRIS/database/seeds/seed_phase1.py))
+- **Compatibility Alignment:** Updated the initial development seed script to hash the default development admin user password using `hash_password("changeme")`.
+- **Security Notice:** The default password `"changeme"` is intended strictly for development and automated testing environments; production deployments must supply unique credentials via secure provisioning.
+
+---
+
+## 2. Verification & Validation Results
+
+### 2.1 Automated Unit Tests (Cross-Platform via pytest)
+All Phase 1.5 components were tested using in-memory and isolated transactional sessions:
+
+- **Full Project Suite:**
+  ```text
+  331 passed, 12 skipped, 2 warnings in 2.63s
+  ```
+  *(12 skipped: 11 Linux integration tests cleanly skipped on macOS due to absence of Linux `/proc` and `inotify`; 1 SQLite CHECK constraint test).*
+
+- **Phase 1.5 Focused Suite (141 passed):**
+  - [`tests/unit/test_security.py`](file:///Users/alias/Desktop/OSIRIS/tests/unit/test_security.py): 22 passed (hashing, verification, token issuance, tampering detection, audit logging).
+  - [`tests/unit/test_schemas.py`](file:///Users/alias/Desktop/OSIRIS/tests/unit/test_schemas.py): 33 passed (Pydantic validation, serialization, nullable field handling).
+  - [`tests/unit/test_api_deps.py`](file:///Users/alias/Desktop/OSIRIS/tests/unit/test_api_deps.py): 16 passed (`get_db` lifecycle, bearer token extraction, inactive user handling).
+  - [`tests/unit/test_api_auth.py`](file:///Users/alias/Desktop/OSIRIS/tests/unit/test_api_auth.py): 12 passed (login success, invalid credentials, token issuance, `/api/auth/me`).
+  - [`tests/unit/test_api_status.py`](file:///Users/alias/Desktop/OSIRIS/tests/unit/test_api_status.py): 6 passed (health reporting, database disconnection fallback, information leak prevention).
+  - [`tests/unit/test_api_events.py`](file:///Users/alias/Desktop/OSIRIS/tests/unit/test_api_events.py): 18 passed (filtering, pagination, ordering, 404 handling).
+  - [`tests/unit/test_api_processes.py`](file:///Users/alias/Desktop/OSIRIS/tests/unit/test_api_processes.py): 14 passed (command substring matching, state filtering, pagination).
+  - [`tests/unit/test_api_resources.py`](file:///Users/alias/Desktop/OSIRIS/tests/unit/test_api_resources.py): 4 passed (time-range filtering, pagination, ordering).
+  - [`tests/unit/test_api_files.py`](file:///Users/alias/Desktop/OSIRIS/tests/unit/test_api_files.py): 14 passed (directory-boundary prefix filtering, wildcard escaping, pagination).
+  - [`tests/unit/test_seed_phase1.py`](file:///Users/alias/Desktop/OSIRIS/tests/unit/test_seed_phase1.py): 2 passed (seed generation, admin user hash verification, idempotency).
+
+### 2.2 OpenAPI 3.1.0 Specification Verification
+- Inspected the generated schema at `/openapi.json`.
+- All 10 documented endpoints are registered under `paths`.
+- `HTTPBearer` security scheme is configured in `components.securitySchemes`.
+- Protected endpoints explicitly declare `security: [{"HTTPBearer": []}]`; public endpoints declare empty security requirements.
+
+### 2.3 Live PostgreSQL 18.6 API Smoke Test (`osiris_dev`)
+*Executed against the live PostgreSQL 18.6 service on macOS Darwin (distinguished from automated test fixtures).*
+
+1. **Service Connectivity:** Verified live connection to `postgresql://localhost:5432/osiris_dev`.
+2. **Controlled Development Seed Update:** The development `admin` account in `app_users` was updated to the standard PBKDF2 hash format using `hash_password("changeme")`.
+3. **End-to-End API Smoke Test Results:**
+   - `GET /health` &rarr; `200 OK` (`{"status": "ok", "system": "osiris"}`)
+   - `GET /api/status` &rarr; `200 OK` (`{"status": "healthy", "database": "connected"}`)
+   - `POST /api/auth/login` &rarr; `200 OK` (authenticated development admin; issued bearer token; recorded login in `app_audit_log`)
+   - `GET /api/auth/me` &rarr; `200 OK` (returned authenticated admin user profile)
+   - `GET /api/events` &rarr; `200 OK` (total: 0)
+   - `GET /api/processes` &rarr; `200 OK` (total: 1)
+   - `GET /api/resources` &rarr; `200 OK` (total: 1)
+   - `GET /api/files` &rarr; `200 OK` (total: 1)
+4. **Authentication Boundary Verification:**
+   - Unauthenticated requests to protected endpoints (`/api/auth/me`, `/api/events`, `/api/processes`, `/api/resources`, `/api/files`) consistently returned `401 Unauthorized` (`{"detail": "Missing authentication credentials"}`).
+   - Malformed or invalid bearer tokens returned `401 Unauthorized` (`{"detail": "Invalid or malformed token"}`).
+
+*(Note: Live Linux collector integration was validated separately in Milestone 1.4E on Ubuntu 22.04 and was not part of the macOS Phase 1.5 API smoke test).*

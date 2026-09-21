@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 
+from backend.api.security import hash_password
 from backend.db.session import SessionLocal
 from backend.db.models.host import Host
 from backend.db.models.linux_user import LinuxUser
@@ -127,14 +128,12 @@ def seed() -> None:
         session.add(sample_snapshot)
 
         # --- Application User ---
-        # Password hash is a placeholder — NOT a real password.
-        # The authentication system (Milestone 1.5) will implement
-        # proper password hashing. This value is a bcrypt hash of
-        # the word 'changeme' for development seeding only.
+        # Password "changeme" is for development/testing only and must never
+        # be used in production. Hashed using Phase 1.5 PBKDF2-HMAC-SHA256.
         app_admin = AppUser(
             id=ADMIN_USER_ID,
             username="admin",
-            password_hash="$2b$12$PLACEHOLDER_HASH_DO_NOT_USE_IN_PRODUCTION",
+            password_hash=hash_password("changeme"),
             display_name="OSIRIS Administrator",
             role="admin",
             is_active=True,
