@@ -226,3 +226,53 @@ All Phase 1.5 components were tested using in-memory and isolated transactional 
    - Malformed or invalid bearer tokens returned `401 Unauthorized` (`{"detail": "Invalid or malformed token"}`).
 
 *(Note: Live Linux collector integration was validated separately in Milestone 1.4E on Ubuntu 22.04 and was not part of the macOS Phase 1.5 API smoke test).*
+
+---
+
+## 3. Milestone 1.6: Basic Web Dashboard Walkthrough
+
+### 3.1 Overview & Architecture
+Milestone 1.6 delivers a lightweight, pure vanilla HTML5/CSS3/JavaScript Single Page Application (SPA) web interface for forensic investigation and live system telemetry monitoring.
+
+- **FastAPI Static Serving:** Root route (`GET /` &rarr; `frontend/templates/index.html`) and static asset mount (`/static` &rarr; `frontend/static/`).
+- **No Third-Party Runtime Dependencies:** Zero Node.js, React, Vue, Angular, jQuery, Chart.js, or D3.
+- **Pure Vector Telemetry Visualizations:** SVG charts constructed dynamically with `document.createElementNS` for responsive, accessible time-series data rendering.
+- **Centralized Client Authentication:** `frontend/static/js/api.js` manages access tokens in `sessionStorage` (never `localStorage`), injects Authorization headers, and triggers automatic session expiration hooks on HTTP 401.
+
+### 3.2 Implemented Views & Components
+1. **Application Shell & Authentication:**
+   - Dark cybersecurity aesthetic with CSS custom properties.
+   - Header with status indicators, authenticated user profile, and sign-in/logout modal controls.
+   - Navigation bar toggling across the five investigative domains.
+2. **Dashboard Overview (`frontend/static/js/views/dashboard.js`):**
+   - Platform status card (`GET /api/status`).
+   - Latest resource utilization card (`GET /api/resources?limit=1`).
+   - Observational inventory counters (Events, Processes, Files).
+   - Recent events table (`GET /api/events?limit=5`).
+3. **Event Explorer (`frontend/static/js/views/events.js`):**
+   - Filter controls: `host_id`, `start_time`, `end_time`, `source`, `event_type`, `severity`, `process_id`, `pid`.
+   - Event list with severity badges, timestamp formatting, and pagination.
+   - Event Detail Inspector modal with raw JSON payload viewer.
+4. **Process List (`frontend/static/js/views/processes.js`):**
+   - Filter controls: `host_id`, `pid`, `is_active`.
+   - Process list with active/terminated status badges and command line inspection.
+   - Process Detail Inspector modal with executable, PPID, and start/end times.
+5. **Resource Charts (`frontend/static/js/views/resources.js`):**
+   - Current metric summary cards (CPU, Memory %, Memory Used/Total, Disk Usage, Disk I/O).
+   - Four native SVG time-series charts (CPU Utilization, Memory Utilization, Disk Read & Write Bytes, Disk Usage).
+   - Accessible companion snapshots data table with pagination.
+6. **Files Explorer (`frontend/static/js/views/files.js`):**
+   - Directory-boundary path prefix search, file type filtering, and host ID filtering.
+   - Filesystem table with prominent word-breaking path rendering, file type badges, and inode values.
+   - File Detail Inspector modal.
+
+### 3.3 Security & Quality Guardrails
+- **Zero `localStorage`:** Authentication tokens are stored exclusively in memory and `sessionStorage`.
+- **Zero `innerHTML`:** All user-facing data rendering uses `document.createElement` and `textContent`.
+- **Sanitized Parameterization:** All query strings constructed via `URLSearchParams`.
+- **Strict Error Containment:** All network failures catch and display structured errors without exposing internal database or stack trace details.
+
+### 3.4 Verification & Test Results
+- **Full Workspace Pytest Suite:** 463 passed, 12 skipped in 3.23s.
+- **Phase 1.6 Frontend Contract Suite:** 132 passed across 7 test suites.
+- **JavaScriptCore Runtime Syntax Validation:** All 7 JavaScript files validated with `jsc` (exit code 0).

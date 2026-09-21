@@ -178,21 +178,42 @@ the Event Processing Layer (Milestone 1.3).
 
 ---
 
-### Milestone 1.6 — Basic Web Dashboard
+### Milestone 1.6 — Basic Web Dashboard (Completed)
 
 **Goal:** Provide a web interface for system overview.
 
-- [ ] Dashboard page: system summary, recent events, resource overview
-- [ ] Event explorer: list, filter, and search events
-- [ ] Process list view
-- [ ] Resource charts (CPU, memory, disk)
-- [ ] Responsive layout
-- [ ] Navigation between views
+- [x] Dashboard page: system summary, recent events, resource overview
+- [x] Event explorer: list, filter, and search events
+- [x] Process list view with process detail inspector modal
+- [x] Resource charts (CPU, memory, disk activity & usage via native SVG)
+- [x] Files Explorer view (path prefix search, file type badges, detail inspector modal)
+- [x] Responsive layout (dark cybersecurity theme, CSS Grid & Flexbox)
+- [x] Navigation between views (vanilla SPA controller, session management)
 
 **Testing Checkpoint:**
-- Dashboard loads and displays live data
-- Event explorer filters work correctly
-- UI is usable and navigable
+- Dashboard loads and displays live telemetry
+- Event explorer filters and inspector work correctly
+- Process list and detail inspector work correctly
+- Resource charts render responsive vector time series without third-party dependencies
+- Files explorer filters and file detail inspector work correctly
+- UI is usable, navigable, accessible, and securely parameterized
+- All unit and integration tests pass cleanly
+
+**Milestone 1.6 Validation Evidence:**
+- **Environment:** macOS Darwin (Apple Silicon) / Python 3.12.13
+- **Full Test Suite:** 463 passed, 12 skipped in 3.23s
+  - 451 unit tests passed across collectors, event processing, database, backend API, and frontend integration.
+  - 12 skipped: 11 Linux integration tests and 1 SQLite CHECK constraint test.
+- **Phase 1.6 Frontend Contract Suite:** 132 passed in 1.02s
+  - `tests/unit/test_frontend.py` (10 passed)
+  - `tests/unit/test_dashboard_contract.py` (22 passed)
+  - `tests/unit/test_events_view_contract.py` (26 passed)
+  - `tests/unit/test_processes_view_contract.py` (26 passed)
+  - `tests/unit/test_resources_view_contract.py` (21 passed)
+  - `tests/unit/test_files_view_contract.py` (21 passed)
+  - `tests/unit/test_phase16_integration.py` (26 passed)
+- **JavaScriptCore (jsc) Syntax Validation:** All 7 JavaScript controllers cleanly validated with exit code 0.
+- **Security Rules Verified:** Zero `localStorage` usage, zero `innerHTML` usage, zero `eval` or dynamic code execution, zero hardcoded secrets.
 
 ---
 

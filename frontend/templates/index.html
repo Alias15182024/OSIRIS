@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OSIRIS</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div id="app" class="app-container">
+    <!-- Semantic Header -->
+    <header class="app-header" role="banner">
+      <div class="header-brand">
+        <span class="brand-logo" aria-hidden="true">&#x1F6E1;</span>
+        <div class="brand-text">
+          <h1 class="brand-title">OSIRIS</h1>
+          <span class="brand-tagline">Operating System Incident Reconstruction &amp; Intelligence System</span>
+        </div>
+      </div>
+
+      <!-- User Profile & Authentication Placeholder Region -->
+      <div id="user-profile-area" class="user-profile-area" aria-label="User Profile">
+        <span id="user-status-indicator" class="status-indicator status-offline" aria-label="Connection Status"></span>
+        <span id="user-display-name" class="user-name">Not Authenticated</span>
+        <span id="user-role-badge" class="badge badge-secondary">Guest</span>
+        <button id="login-trigger-btn" class="btn btn-primary btn-sm" type="button">Log In</button>
+        <button id="logout-btn" class="btn btn-outline btn-sm hidden" type="button" aria-label="Log Out">Log Out</button>
+      </div>
+    </header>
+
+    <!-- Global Platform Notification Banner -->
+    <div id="global-alert-container" class="alert-container hidden" role="alert" aria-live="polite">
+      <div id="global-alert-message" class="alert-message"></div>
+    </div>
+
+    <!-- Navigation Region -->
+    <nav class="app-nav" role="navigation" aria-label="Main Navigation">
+      <ul class="nav-list">
+        <li class="nav-item">
+          <button id="nav-dashboard" class="nav-link active" type="button" data-view="dashboard" aria-current="page">
+            <span class="nav-icon" aria-hidden="true">&#x1F4CA;</span>
+            <span class="nav-label">Dashboard</span>
+          </button>
+        </li>
+        <li class="nav-item">
+          <button id="nav-events" class="nav-link" type="button" data-view="events">
+            <span class="nav-icon" aria-hidden="true">&#x26A1;</span>
+            <span class="nav-label">Events</span>
+          </button>
+        </li>
+        <li class="nav-item">
+          <button id="nav-processes" class="nav-link" type="button" data-view="processes">
+            <span class="nav-icon" aria-hidden="true">&#x2699;</span>
+            <span class="nav-label">Processes</span>
+          </button>
+        </li>
+        <li class="nav-item">
+          <button id="nav-resources" class="nav-link" type="button" data-view="resources">
+            <span class="nav-icon" aria-hidden="true">&#x1F4C8;</span>
+            <span class="nav-label">Resources</span>
+          </button>
+        </li>
+        <li class="nav-item">
+          <button id="nav-files" class="nav-link" type="button" data-view="files">
+            <span class="nav-icon" aria-hidden="true">&#x1F4C1;</span>
+            <span class="nav-label">Files</span>
+          </button>
+        </li>
+      </ul>
+    </nav>
+
+    <!-- Main Content Region -->
+    <main id="main-content" class="app-main" role="main">
+
+      <!-- View 1: Dashboard Overview -->
+      <section id="view-dashboard" class="view-panel active" aria-labelledby="heading-dashboard">
+        <div class="view-header">
+          <h2 id="heading-dashboard" class="view-title">System Overview</h2>
+          <div class="view-actions">
+            <button id="dashboard-refresh-btn" class="btn btn-outline btn-sm" type="button" aria-label="Refresh Dashboard">Refresh</button>
+            <span id="dashboard-refresh-time" class="timestamp-label"></span>
+          </div>
+        </div>
+
+        <div class="dashboard-grid">
+          <!-- System Summary Card -->
+          <div id="dashboard-system-card" class="card system-summary-card">
+            <div class="card-header">
+              <h3 class="card-title">Platform Status</h3>
+              <span id="system-status-badge" class="badge badge-outline">Checking...</span>
+            </div>
+            <div class="card-body">
+              <div id="status-card-content" class="status-details">
+                <div class="status-row">
+                  <span class="status-label">Host ID</span>
+                  <span id="status-host-id" class="status-value mono-cell">--</span>
+                </div>
+                <div class="status-row">
+                  <span class="status-label">System</span>
+                  <span id="status-system" class="status-value">--</span>
+                </div>
+                <div class="status-row">
+                  <span class="status-label">Database</span>
+                  <span id="status-database" class="status-value">
+                    <span id="system-db-badge" class="badge badge-outline">--</span>
+                  </span>
+                </div>
+                <div class="status-row">
+                  <span class="status-label">Operational Status</span>
+                  <span id="status-operational" class="status-value">--</span>
+                </div>
+              </div>
+              <div id="status-card-error" class="alert-box alert-error hidden" role="alert"></div>
+            </div>
+          </div>
+
+          <!-- Live Resource Summary Card -->
+          <div id="dashboard-resource-card" class="card resource-summary-card">
+            <div class="card-header">
+              <h3 class="card-title">Resource Utilization</h3>
+              <span id="resource-snapshot-time" class="timestamp-label"></span>
+            </div>
+            <div class="card-body">
+              <div id="resource-metrics-grid" class="metrics-grid">
+                <div class="metric-item">
+                  <span class="metric-label">CPU Utilization</span>
+                  <span id="res-cpu-percent" class="metric-value">--</span>
+                </div>
+                <div class="metric-item">
+                  <span class="metric-label">Memory Utilization</span>
+                  <span id="res-memory-percent" class="metric-value">--</span>
+                </div>
+                <div class="metric-item">
+                  <span class="metric-label">Memory Used</span>
+                  <span id="res-memory-used" class="metric-value">--</span>
+                </div>
+                <div class="metric-item">
+                  <span class="metric-label">Memory Total</span>
+                  <span id="res-memory-total" class="metric-value">--</span>
+                </div>
+                <div class="metric-item metric-item-full">
+                  <span class="metric-label">Disk Usage</span>
+                  <span id="res-disk-usage" class="metric-value">--</span>
+                </div>
+              </div>
+              <div id="resource-card-error" class="alert-box alert-error hidden" role="alert"></div>
+            </div>
+          </div>
+
+          <!-- Quick Metrics Card / Observational Inventory -->
+          <div id="dashboard-metrics-card" class="card metrics-card">
+            <div class="card-header">
+              <h3 class="card-title">Observational Inventory</h3>
+            </div>
+            <div class="card-body">
+              <div class="inventory-counters">
+                <div class="inventory-counter-card">
+                  <span class="counter-label">Total Events</span>
+                  <span id="inv-events-count" class="counter-value">--</span>
+                </div>
+                <div class="inventory-counter-card">
+                  <span class="counter-label">Active Processes</span>
+                  <span id="inv-processes-count" class="counter-value">--</span>
+                </div>
+                <div class="inventory-counter-card">
+                  <span class="counter-label">Observed Files</span>
+                  <span id="inv-files-count" class="counter-value">--</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Recent Events Card -->
+          <div id="dashboard-recent-events-card" class="card recent-events-card">
+            <div class="card-header">
+              <h3 class="card-title">Recent Events</h3>
+              <span id="recent-events-count-badge" class="badge badge-secondary">0 events</span>
+            </div>
+            <div class="card-body">
+              <div class="table-responsive">
+                <table id="dashboard-recent-events-table" class="data-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Timestamp</th>
+                      <th scope="col">Source</th>
+                      <th scope="col">Event Type</th>
+                      <th scope="col">Severity</th>
+                      <th scope="col">Action</th>
+                      <th scope="col">User</th>
+                      <th scope="col">PID</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dashboard-recent-events-tbody">
+                  </tbody>
+                </table>
+                <div id="dashboard-recent-events-empty" class="empty-state hidden">
+                  <span class="empty-text">No recent events.</span>
+                </div>
+                <div id="dashboard-recent-events-error" class="alert-box alert-error hidden" role="alert"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- View 2: Event Explorer -->
+      <section id="view-events" class="view-panel hidden" aria-labelledby="heading-events">
+        <div class="view-header">
+          <h2 id="heading-events" class="view-title">Event Explorer</h2>
+        </div>
+        <!-- Filter Bar -->
+        <div id="events-filter-container" class="card filter-card">
+          <div class="card-header">
+            <h3 class="card-title">Filter Criteria</h3>
+          </div>
+          <div class="card-body">
+            <form id="events-filter-form" class="filter-form" novalidate>
+              <div class="filter-grid">
+                <div class="form-group">
+                  <label for="filter-event-host-id" class="form-label">Host ID</label>
+                  <input id="filter-event-host-id" class="form-input" type="text" placeholder="UUID filter">
+                </div>
+                <div class="form-group">
+                  <label for="filter-event-start-time" class="form-label">Start Time</label>
+                  <input id="filter-event-start-time" class="form-input" type="datetime-local">
+                </div>
+                <div class="form-group">
+                  <label for="filter-event-end-time" class="form-label">End Time</label>
+                  <input id="filter-event-end-time" class="form-input" type="datetime-local">
+                </div>
+                <div class="form-group">
+                  <label for="filter-event-source" class="form-label">Source</label>
+                  <input id="filter-event-source" class="form-input" type="text" placeholder="e.g. auditd, syslog">
+                </div>
+                <div class="form-group">
+                  <label for="filter-event-event-type" class="form-label">Event Type</label>
+                  <input id="filter-event-event-type" class="form-input" type="text" placeholder="e.g. process_exec">
+                </div>
+                <div class="form-group">
+                  <label for="filter-event-severity" class="form-label">Severity</label>
+                  <select id="filter-event-severity" class="form-input form-select">
+                    <option value="">All Severities</option>
+                    <option value="info">Info</option>
+                    <option value="warning">Warning</option>
+                    <option value="error">Error</option>
+                    <option value="critical">Critical</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="filter-event-process-id" class="form-label">Process ID</label>
+                  <input id="filter-event-process-id" class="form-input" type="text" placeholder="Process UUID">
+                </div>
+                <div class="form-group">
+                  <label for="filter-event-pid" class="form-label">PID</label>
+                  <input id="filter-event-pid" class="form-input" type="number" min="1" placeholder="Process PID">
+                </div>
+              </div>
+              <div class="filter-actions">
+                <button id="filter-event-apply-btn" class="btn btn-primary btn-sm" type="submit">Apply Filters</button>
+                <button id="filter-event-reset-btn" class="btn btn-outline btn-sm" type="button">Reset Filters</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Events Table -->
+        <div id="events-table-container" class="card table-card">
+          <div class="card-header">
+            <h3 class="card-title">Normalized Events</h3>
+            <span id="events-result-count" class="badge badge-secondary">0 events</span>
+          </div>
+          <div class="card-body">
+            <div id="events-error-box" class="alert-box alert-error hidden" role="alert"></div>
+            <div class="table-responsive">
+              <table id="events-table" class="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Timestamp</th>
+                    <th scope="col">Source</th>
+                    <th scope="col">Event Type</th>
+                    <th scope="col">Severity</th>
+                    <th scope="col">User</th>
+                    <th scope="col">PID</th>
+                    <th scope="col">Action</th>
+                    <th scope="col">Status</th>
+                  </tr>
+                </thead>
+                <tbody id="events-tbody">
+                </tbody>
+              </table>
+            </div>
+            <div id="events-empty-state" class="empty-state hidden">
+              <span class="empty-icon" aria-hidden="true">&#x1F50D;</span>
+              <p class="empty-text">No events found matching the selected filters.</p>
+              <button id="events-empty-reset-btn" class="btn btn-outline btn-sm" type="button">Reset Filters</button>
+            </div>
+          </div>
+          <div id="events-pagination" class="pagination-toolbar">
+            <span id="events-page-info" class="pagination-info">Showing 0 of 0 events</span>
+            <div class="pagination-actions">
+              <button id="events-prev-btn" class="btn btn-outline btn-sm" type="button" disabled>&larr; Previous</button>
+              <button id="events-next-btn" class="btn btn-outline btn-sm" type="button" disabled>Next &rarr;</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- View 3: Process List -->
+      <section id="view-processes" class="view-panel hidden" aria-labelledby="heading-processes">
+        <div class="view-header">
+          <h2 id="heading-processes" class="view-title">Process List</h2>
+        </div>
+        <!-- Process Filter Bar -->
+        <div id="processes-filter-container" class="card filter-card">
+          <div class="card-header">
+            <h3 class="card-title">Filter Processes</h3>
+          </div>
+          <div class="card-body">
+            <form id="processes-filter-form" class="filter-form" novalidate>
+              <div class="filter-grid filter-grid-3">
+                <div class="form-group">
+                  <label for="filter-process-host-id" class="form-label">Host ID</label>
+                  <input id="filter-process-host-id" class="form-input" type="text" placeholder="UUID filter">
+                </div>
+                <div class="form-group">
+                  <label for="filter-process-pid" class="form-label">PID</label>
+                  <input id="filter-process-pid" class="form-input" type="number" min="1" placeholder="Process PID">
+                </div>
+                <div class="form-group">
+                  <label for="filter-process-is-active" class="form-label">Active State</label>
+                  <select id="filter-process-is-active" class="form-input form-select">
+                    <option value="">All States</option>
+                    <option value="true">Active Only</option>
+                    <option value="false">Terminated Only</option>
+                  </select>
+                </div>
+              </div>
+              <div class="filter-actions">
+                <button id="filter-process-apply-btn" class="btn btn-primary btn-sm" type="submit">Apply Filters</button>
+                <button id="filter-process-reset-btn" class="btn btn-outline btn-sm" type="button">Reset Filters</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Process Table -->
+        <div id="processes-table-container" class="card table-card">
+          <div class="card-header">
+            <h3 class="card-title">Observed Processes</h3>
+            <span id="processes-result-count" class="badge badge-secondary">0 processes</span>
+          </div>
+          <div class="card-body">
+            <div id="processes-error-box" class="alert-box alert-error hidden" role="alert"></div>
+            <div class="table-responsive">
+              <table id="processes-table" class="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">PID</th>
+                    <th scope="col">Process ID</th>
+                    <th scope="col">PPID</th>
+                    <th scope="col">Command</th>
+                    <th scope="col">Linux User ID</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Started</th>
+                    <th scope="col">Ended</th>
+                  </tr>
+                </thead>
+                <tbody id="processes-tbody">
+                </tbody>
+              </table>
+            </div>
+            <div id="processes-empty-state" class="empty-state hidden">
+              <span class="empty-icon" aria-hidden="true">&#x2699;</span>
+              <p class="empty-text">No processes found matching the selected filters.</p>
+              <button id="processes-empty-reset-btn" class="btn btn-outline btn-sm" type="button">Reset Filters</button>
+            </div>
+          </div>
+          <div id="processes-pagination" class="pagination-toolbar">
+            <span id="processes-page-info" class="pagination-info">Showing 0 of 0 processes</span>
+            <div class="pagination-actions">
+              <button id="processes-prev-btn" class="btn btn-outline btn-sm" type="button" disabled>&larr; Previous</button>
+              <button id="processes-next-btn" class="btn btn-outline btn-sm" type="button" disabled>Next &rarr;</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- View 4: Resource Charts -->
+      <section id="view-resources" class="view-panel hidden" aria-labelledby="heading-resources">
+        <div class="view-header">
+          <h2 id="heading-resources" class="view-title">Resource Metrics &amp; Charts</h2>
+          <div class="view-actions">
+            <button id="resources-refresh-btn" class="btn btn-outline btn-sm" type="button" aria-label="Refresh Resources">Refresh</button>
+            <span id="resources-refresh-time" class="timestamp-label"></span>
+          </div>
+        </div>
+
+        <!-- Resources Filter / Query Toolbar -->
+        <div id="resources-filter-container" class="card filter-card">
+          <div class="card-header">
+            <h3 class="card-title">Filter &amp; Query Telemetry</h3>
+          </div>
+          <div class="card-body">
+            <form id="resources-filter-form" class="filter-form">
+              <div class="filter-grid filter-grid-3">
+                <div class="form-group">
+                  <label for="filter-resource-host-id" class="form-label">Host ID (UUID)</label>
+                  <input id="filter-resource-host-id" class="form-input" type="text" placeholder="e.g. 00000000-0000-0000-0000-000000000001">
+                </div>
+                <div class="form-group">
+                  <label for="filter-resource-range" class="form-label">Time Window Preset</label>
+                  <select id="filter-resource-range" class="form-input form-select">
+                    <option value="all" selected>All Recent Records</option>
+                    <option value="15m">Last 15 Minutes</option>
+                    <option value="1h">Last 1 Hour</option>
+                    <option value="6h">Last 6 Hours</option>
+                    <option value="24h">Last 24 Hours</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="filter-resource-limit" class="form-label">Page Size</label>
+                  <select id="filter-resource-limit" class="form-input form-select">
+                    <option value="25">25 snapshots</option>
+                    <option value="50" selected>50 snapshots</option>
+                    <option value="100">100 snapshots</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="filter-resource-start" class="form-label">Custom Start Time (ISO)</label>
+                  <input id="filter-resource-start" class="form-input" type="text" placeholder="YYYY-MM-DDTHH:MM:SSZ">
+                </div>
+                <div class="form-group">
+                  <label for="filter-resource-end" class="form-label">Custom End Time (ISO)</label>
+                  <input id="filter-resource-end" class="form-input" type="text" placeholder="YYYY-MM-DDTHH:MM:SSZ">
+                </div>
+                <div class="form-group filter-actions-bottom">
+                  <button id="filter-resource-apply-btn" class="btn btn-primary btn-sm" type="submit">Apply Filters</button>
+                  <button id="filter-resource-reset-btn" class="btn btn-outline btn-sm" type="button">Reset</button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Latest Snapshot Summary Cards -->
+        <div id="resources-summary-cards" class="card resource-summary-card">
+          <div class="card-header">
+            <h3 class="card-title">Current Metric Status</h3>
+            <span id="res-card-timestamp" class="timestamp-label">No snapshots loaded</span>
+          </div>
+          <div class="card-body">
+            <div class="metrics-grid">
+              <div class="metric-item">
+                <span class="metric-label">CPU Utilization</span>
+                <span id="res-card-cpu" class="metric-value">--</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">Memory Utilization</span>
+                <span id="res-card-memory" class="metric-value">--</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">Memory Used</span>
+                <span id="res-card-memory-used" class="metric-value">--</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">Memory Total</span>
+                <span id="res-card-memory-total" class="metric-value">--</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">Disk Read (Total)</span>
+                <span id="res-card-disk-read" class="metric-value">--</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">Disk Write (Total)</span>
+                <span id="res-card-disk-write" class="metric-value">--</span>
+              </div>
+              <div class="metric-item metric-item-full">
+                <span class="metric-label">Disk Usage</span>
+                <span id="res-card-disk-usage" class="metric-value">--</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Error & Empty State Indicators -->
+        <div id="resources-error-box" class="alert-box alert-error hidden" role="alert"></div>
+        <div id="resources-empty-state" class="empty-state hidden">
+          <span class="empty-icon" aria-hidden="true">&#x1F4C8;</span>
+          <p class="empty-text">No resource snapshots found matching the selected range.</p>
+          <button id="resources-empty-reset-btn" class="btn btn-outline btn-sm" type="button">Reset Filters</button>
+        </div>
+
+        <!-- Responsive Vector Charts Grid (SVG) -->
+        <div id="resources-charts-grid" class="charts-grid">
+          <div id="cpu-chart-card" class="card chart-card">
+            <div class="card-header">
+              <h3 class="card-title">CPU Utilization (%)</h3>
+            </div>
+            <div class="card-body">
+              <div id="cpu-chart-svg-container" class="svg-chart-container"></div>
+            </div>
+          </div>
+          <div id="memory-chart-card" class="card chart-card">
+            <div class="card-header">
+              <h3 class="card-title">Memory Utilization (%)</h3>
+            </div>
+            <div class="card-body">
+              <div id="memory-chart-svg-container" class="svg-chart-container"></div>
+            </div>
+          </div>
+          <div id="disk-activity-chart-card" class="card chart-card">
+            <div class="card-header">
+              <h3 class="card-title">Disk Activity (Bytes)</h3>
+              <div class="chart-legend">
+                <span class="legend-item"><span class="legend-color legend-color-read"></span>Read</span>
+                <span class="legend-item"><span class="legend-color legend-color-write"></span>Write</span>
+              </div>
+            </div>
+            <div class="card-body">
+              <div id="disk-activity-svg-container" class="svg-chart-container"></div>
+            </div>
+          </div>
+          <div id="disk-usage-chart-card" class="card chart-card">
+            <div class="card-header">
+              <h3 class="card-title">Disk Usage (%)</h3>
+            </div>
+            <div class="card-body">
+              <div id="disk-usage-svg-container" class="svg-chart-container"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Accessible Snapshots Data Table -->
+        <div id="resources-table-container" class="card table-card">
+          <div class="card-header">
+            <h3 class="card-title">Snapshot Records</h3>
+            <span id="resources-result-count" class="timestamp-label">0 snapshots</span>
+          </div>
+          <div class="card-body table-scrollable">
+            <table id="resources-table" class="data-table" aria-label="Observed Resource Snapshots">
+              <thead>
+                <tr>
+                  <th scope="col">Timestamp</th>
+                  <th scope="col">CPU %</th>
+                  <th scope="col">Memory %</th>
+                  <th scope="col">Memory Used</th>
+                  <th scope="col">Memory Total</th>
+                  <th scope="col">Disk Read</th>
+                  <th scope="col">Disk Write</th>
+                  <th scope="col">Disk Usage %</th>
+                </tr>
+              </thead>
+              <tbody id="resources-tbody"></tbody>
+            </table>
+          </div>
+          <div id="resources-pagination" class="pagination-toolbar">
+            <span id="resources-page-info" class="pagination-info">Showing 0–0 of 0 snapshots</span>
+            <div class="pagination-actions">
+              <button id="resources-prev-btn" class="btn btn-outline btn-sm" type="button" disabled>&larr; Previous</button>
+              <button id="resources-next-btn" class="btn btn-outline btn-sm" type="button" disabled>Next &rarr;</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- View 5: Files Explorer -->
+      <section id="view-files" class="view-panel hidden" aria-labelledby="heading-files">
+        <div class="view-header">
+          <h2 id="heading-files" class="view-title">Observed Files</h2>
+          <div class="view-actions">
+            <button id="files-refresh-btn" class="btn btn-outline btn-sm" type="button" aria-label="Refresh Files">Refresh</button>
+            <span id="files-refresh-time" class="timestamp-label"></span>
+          </div>
+        </div>
+
+        <!-- Files Filter / Query Toolbar -->
+        <div id="files-filter-container" class="card filter-card">
+          <div class="card-header">
+            <h3 class="card-title">Filter &amp; Query Filesystem</h3>
+          </div>
+          <div class="card-body">
+            <form id="files-filter-form" class="filter-form">
+              <div class="filter-grid filter-grid-3">
+                <div class="form-group">
+                  <label for="filter-file-path" class="form-label">Path Prefix</label>
+                  <input id="filter-file-path" class="form-input" type="text" placeholder="e.g. /etc/ or /bin/bash">
+                </div>
+                <div class="form-group">
+                  <label for="filter-file-type" class="form-label">File Type</label>
+                  <select id="filter-file-type" class="form-input form-select">
+                    <option value="" selected>All File Types</option>
+                    <option value="file">Regular File</option>
+                    <option value="directory">Directory</option>
+                    <option value="symlink">Symlink</option>
+                    <option value="socket">Socket</option>
+                    <option value="fifo">FIFO / Pipe</option>
+                    <option value="character_device">Character Device</option>
+                    <option value="block_device">Block Device</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="filter-file-host-id" class="form-label">Host ID (UUID)</label>
+                  <input id="filter-file-host-id" class="form-input" type="text" placeholder="e.g. 00000000-0000-0000-0000-000000000001">
+                </div>
+                <div class="form-group">
+                  <label for="filter-file-limit" class="form-label">Page Size</label>
+                  <select id="filter-file-limit" class="form-input form-select">
+                    <option value="25" selected>25 files</option>
+                    <option value="50">50 files</option>
+                    <option value="100">100 files</option>
+                  </select>
+                </div>
+                <div class="form-group filter-actions-bottom">
+                  <button id="filter-file-apply-btn" class="btn btn-primary btn-sm" type="submit">Apply Filters</button>
+                  <button id="filter-file-reset-btn" class="btn btn-outline btn-sm" type="button">Reset</button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Error & Empty State Indicators -->
+        <div id="files-error-box" class="alert-box alert-error hidden" role="alert"></div>
+        <div id="files-empty-state" class="empty-state hidden">
+          <span class="empty-icon" aria-hidden="true">&#x1F4C1;</span>
+          <p class="empty-text">No files found matching the selected filters.</p>
+          <button id="files-empty-reset-btn" class="btn btn-outline btn-sm" type="button">Reset Filters</button>
+        </div>
+
+        <!-- Observed Files Table -->
+        <div id="files-table-container" class="card table-card">
+          <div class="card-header">
+            <h3 class="card-title">Observed Filesystem Records</h3>
+            <span id="files-result-count" class="timestamp-label">0 files</span>
+          </div>
+          <div class="card-body table-scrollable">
+            <table id="files-table" class="data-table" aria-label="Observed Files">
+              <thead>
+                <tr>
+                  <th scope="col">Path</th>
+                  <th scope="col">Type</th>
+                  <th scope="col">Inode</th>
+                  <th scope="col">Host ID</th>
+                  <th scope="col">First Seen</th>
+                  <th scope="col">Last Seen</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="files-tbody"></tbody>
+            </table>
+          </div>
+          <div id="files-pagination" class="pagination-toolbar">
+            <span id="files-page-info" class="pagination-info">Showing 0–0 of 0 files</span>
+            <div class="pagination-actions">
+              <button id="files-prev-btn" class="btn btn-outline btn-sm" type="button" disabled>&larr; Previous</button>
+              <button id="files-next-btn" class="btn btn-outline btn-sm" type="button" disabled>Next &rarr;</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Login Modal Placeholder / Container -->
+    <div id="login-modal-container" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="login-modal-title">
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <h3 id="login-modal-title" class="modal-title">OSIRIS Authentication</h3>
+          <button id="login-modal-close" class="modal-close-btn" type="button" aria-label="Close modal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div id="login-error" class="alert-box alert-error hidden" role="alert" aria-live="polite"></div>
+          <form id="login-form" class="login-form" novalidate>
+            <div class="form-group">
+              <label for="login-username" class="form-label">Username</label>
+              <input id="login-username" class="form-input" type="text" name="username" autocomplete="username" required placeholder="Enter username">
+            </div>
+            <div class="form-group">
+              <label for="login-password" class="form-label">Password</label>
+              <input id="login-password" class="form-input" type="password" name="password" autocomplete="current-password" required placeholder="Enter password">
+            </div>
+            <div class="form-actions">
+              <button id="login-submit-btn" class="btn btn-primary btn-block" type="submit">
+                <span class="btn-text">Sign In</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Event Detail Inspector Modal -->
+    <div id="event-detail-modal-container" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="event-detail-title">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-header">
+          <h3 id="event-detail-title" class="modal-title">Event Detail Inspector</h3>
+          <button id="event-detail-close-btn" class="modal-close-btn" type="button" aria-label="Close modal">&times;</button>
+        </div>
+        <div class="modal-body modal-scrollable">
+          <div id="event-detail-error" class="alert-box alert-error hidden" role="alert"></div>
+          <div id="event-detail-content" class="event-detail-grid">
+            <div class="detail-row"><span class="detail-label">Event ID</span><span id="detail-event-id" class="detail-value mono-cell">--</span></div>
+            <div class="detail-row"><span class="detail-label">Timestamp</span><span id="detail-timestamp" class="detail-value mono-cell">--</span></div>
+            <div class="detail-row"><span class="detail-label">Source</span><span id="detail-source" class="detail-value">--</span></div>
+            <div class="detail-row"><span class="detail-label">Event Type</span><span id="detail-event-type" class="detail-value mono-cell">--</span></div>
+            <div class="detail-row"><span class="detail-label">Action</span><span id="detail-action" class="detail-value">--</span></div>
+            <div class="detail-row"><span class="detail-label">Severity</span><span id="detail-severity" class="detail-value">--</span></div>
+            <div class="detail-row"><span class="detail-label">UID</span><span id="detail-uid" class="detail-value mono-cell">--</span></div>
+            <div class="detail-row"><span class="detail-label">Username</span><span id="detail-username" class="detail-value">--</span></div>
+            <div class="detail-row"><span class="detail-label">PID</span><span id="detail-pid" class="detail-value mono-cell">--</span></div>
+            <div class="detail-row"><span class="detail-label">PPID</span><span id="detail-ppid" class="detail-value mono-cell">--</span></div>
+            <div class="detail-row"><span class="detail-label">Command</span><span id="detail-command" class="detail-value mono-cell">--</span></div>
+            <div class="detail-row"><span class="detail-label">Object Type</span><span id="detail-object-type" class="detail-value">--</span></div>
+            <div class="detail-row"><span class="detail-label">Object Path</span><span id="detail-object-path" class="detail-value mono-cell">--</span></div>
+            <div class="detail-row"><span class="detail-label">Success</span><span id="detail-success" class="detail-value">--</span></div>
+            <div class="detail-row"><span class="detail-label">Result</span><span id="detail-result" class="detail-value">--</span></div>
+            <div class="detail-payload-section">
+              <span class="detail-label">Payload</span>
+              <pre class="json-viewer"><code id="detail-payload">{}</code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Process Detail Inspector Modal -->
+    <div id="process-detail-modal-container" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="process-detail-title">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-header">
+          <h3 id="process-detail-title" class="modal-title">Process Detail Inspector</h3>
+          <button id="process-detail-close-btn" class="modal-close-btn" type="button" aria-label="Close modal">&times;</button>
+        </div>
+        <div class="modal-body modal-scrollable">
+          <div id="process-detail-error" class="alert-box alert-error hidden" role="alert"></div>
+          <div id="process-detail-content" class="event-detail-grid">
+            <div class="detail-row"><span class="detail-label">Process ID</span><span id="detail-process-id" class="detail-value mono-cell">--</span></div>
+            <div class="detail-row"><span class="detail-label">Host ID</span><span id="detail-process-host-id" class="detail-value mono-cell">--</span></div>
+            <div class="detail-row"><span class="detail-label">PID</span><span id="detail-process-pid" class="detail-value mono-cell">--</span></div>
+            <div class="detail-row"><span class="detail-label">PPID</span><span id="detail-process-ppid" class="detail-value mono-cell">--</span></div>
+            <div class="detail-row"><span class="detail-label">Command</span><span id="detail-process-command" class="detail-value mono-cell">--</span></div>
+            <div class="detail-row"><span class="detail-label">Executable</span><span id="detail-process-executable" class="detail-value mono-cell">--</span></div>
+            <div class="detail-row"><span class="detail-label">Linux User ID</span><span id="detail-process-linux-user-id" class="detail-value mono-cell">--</span></div>
+            <div class="detail-row"><span class="detail-label">Status</span><span id="detail-process-status" class="detail-value">--</span></div>
+            <div class="detail-row"><span class="detail-label">Started At</span><span id="detail-process-started-at" class="detail-value mono-cell">--</span></div>
+            <div class="detail-row"><span class="detail-label">Ended At</span><span id="detail-process-ended-at" class="detail-value mono-cell">--</span></div>
+            <div class="detail-row"><span class="detail-label">Created At</span><span id="detail-process-created-at" class="detail-value mono-cell">--</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- File Detail Inspector Modal -->
+    <div id="file-detail-modal-container" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="file-detail-title">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-header">
+          <h3 id="file-detail-title" class="modal-title">File Detail Inspector</h3>
+          <button id="file-detail-close-btn" class="modal-close-btn" type="button" aria-label="Close modal">&times;</button>
+        </div>
+        <div class="modal-body modal-scrollable">
+          <div id="file-detail-error" class="alert-box alert-error hidden" role="alert"></div>
+          <div id="file-detail-content" class="event-detail-grid">
+            <div class="detail-row"><span class="detail-label">File ID</span><span id="detail-file-id" class="detail-value mono-cell">--</span></div>
+            <div class="detail-row"><span class="detail-label">Host ID</span><span id="detail-file-host-id" class="detail-value mono-cell">--</span></div>
+            <div class="detail-row"><span class="detail-label">Path</span><span id="detail-file-path" class="detail-value mono-cell file-path-cell">--</span></div>
+            <div class="detail-row"><span class="detail-label">File Type</span><span id="detail-file-type" class="detail-value">--</span></div>
+            <div class="detail-row"><span class="detail-label">Inode</span><span id="detail-file-inode" class="detail-value mono-cell">--</span></div>
+            <div class="detail-row"><span class="detail-label">First Seen</span><span id="detail-file-first-seen" class="detail-value mono-cell">--</span></div>
+            <div class="detail-row"><span class="detail-label">Last Seen</span><span id="detail-file-last-seen" class="detail-value mono-cell">--</span></div>
+            <div class="detail-row"><span class="detail-label">Created At</span><span id="detail-file-created-at" class="detail-value mono-cell">--</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Global Loading Indicator Shell -->
+    <div id="global-loading-indicator" class="loading-overlay hidden" aria-live="assertive" aria-label="Loading content">
+      <div class="spinner" aria-hidden="true"></div>
+      <span class="loading-text">Loading OSIRIS telemetry...</span>
+    </div>
+
+    <!-- Semantic Footer -->
+    <footer class="app-footer" role="contentinfo">
+      <div class="footer-content">
+        <span>OSIRIS Platform &mdash; Forensic Incident Reconstruction &amp; Intelligence System</span>
+        <span class="footer-version">Phase 1.6</span>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Client Application Scripts -->
+  <script src="/static/js/api.js" defer></script>
+  <script src="/static/js/views/dashboard.js" defer></script>
+  <script src="/static/js/views/events.js" defer></script>
+  <script src="/static/js/views/processes.js" defer></script>
+  <script src="/static/js/views/resources.js" defer></script>
+  <script src="/static/js/views/files.js" defer></script>
+  <script src="/static/js/app.js" defer></script>
+</body>
+</html>
