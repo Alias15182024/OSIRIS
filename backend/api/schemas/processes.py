@@ -15,7 +15,7 @@ class ProcessQueryParams(BaseModel):
     host_id: Optional[UUID] = None
     pid: Optional[int] = None
     is_active: Optional[bool] = None
-    limit: int = Field(default=50, ge=1)
+    limit: int = Field(default=50, ge=1, le=100)
     offset: int = Field(default=0, ge=0)
 
 

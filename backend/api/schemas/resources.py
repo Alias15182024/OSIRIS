@@ -15,7 +15,7 @@ class ResourceSnapshotQueryParams(BaseModel):
     host_id: Optional[UUID] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
-    limit: int = Field(default=50, ge=1)
+    limit: int = Field(default=50, ge=1, le=100)
     offset: int = Field(default=0, ge=0)
 
 

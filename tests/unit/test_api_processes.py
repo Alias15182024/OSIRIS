@@ -418,3 +418,19 @@ class TestGetProcessEndpoint:
         # Passing an integer PID instead of a UUID primary key must fail validation
         resp = client.get("/api/processes/500", headers=auth_headers)
         assert resp.status_code == 422
+
+    def test_list_processes_invalid_limit_returns_422(
+        self,
+        client: TestClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        resp = client.get("/api/processes?limit=0", headers=auth_headers)
+        assert resp.status_code == 422
+
+    def test_list_processes_limit_above_maximum_returns_422(
+        self,
+        client: TestClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        resp = client.get("/api/processes?limit=101", headers=auth_headers)
+        assert resp.status_code == 422

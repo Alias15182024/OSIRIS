@@ -322,6 +322,15 @@ class TestResourceValidation:
         resp = client.get("/api/resources?limit=0", headers=auth_headers)
         assert resp.status_code == 422
 
+    def test_limit_above_maximum_returns_422(
+        self,
+        client: TestClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        resp = client.get("/api/resources?limit=101", headers=auth_headers)
+        assert resp.status_code == 422
+
+
     def test_invalid_offset_returns_422(
         self,
         client: TestClient,

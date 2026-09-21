@@ -20,7 +20,7 @@ class EventQueryParams(BaseModel):
     severity: Optional[str] = None
     process_id: Optional[UUID] = None
     pid: Optional[int] = None
-    limit: int = Field(default=50, ge=1)
+    limit: int = Field(default=50, ge=1, le=100)
     offset: int = Field(default=0, ge=0)
 
 

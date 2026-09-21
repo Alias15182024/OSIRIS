@@ -174,15 +174,24 @@ class TestEventSchemas:
         assert params.limit == 100
         assert params.offset == 20
 
-    def test_event_query_params_invalid_pagination_raises(self) -> None:
+    def test_event_query_params_pagination(self) -> None:
+        # valid limits
+        assert EventQueryParams().limit == 50
+        assert EventQueryParams(limit=1).limit == 1
+        assert EventQueryParams(limit=100).limit == 100
+
+        # invalid limits
         with pytest.raises(ValidationError):
-            EventQueryParams(limit=0)  # ge=1 required
+            EventQueryParams(limit=0)
 
         with pytest.raises(ValidationError):
             EventQueryParams(limit=-5)
 
         with pytest.raises(ValidationError):
-            EventQueryParams(offset=-1)  # ge=0 required
+            EventQueryParams(limit=101)
+
+        with pytest.raises(ValidationError):
+            EventQueryParams(offset=-1)
 
     def test_event_response_all_fields(self) -> None:
         ev_id = uuid.uuid4()
@@ -312,8 +321,20 @@ class TestProcessSchemas:
         assert params.is_active is None
 
     def test_process_query_params_validation(self) -> None:
+        # valid limits
+        assert ProcessQueryParams().limit == 50
+        assert ProcessQueryParams(limit=1).limit == 1
+        assert ProcessQueryParams(limit=100).limit == 100
+
+        # invalid limits
         with pytest.raises(ValidationError):
             ProcessQueryParams(limit=0)
+
+        with pytest.raises(ValidationError):
+            ProcessQueryParams(limit=-5)
+
+        with pytest.raises(ValidationError):
+            ProcessQueryParams(limit=101)
 
         with pytest.raises(ValidationError):
             ProcessQueryParams(offset=-1)
@@ -389,6 +410,25 @@ class TestResourceSchemas:
         assert params.host_id is None
         assert params.start_time is None
         assert params.end_time is None
+
+    def test_resource_query_params_validation(self) -> None:
+        # valid limits
+        assert ResourceSnapshotQueryParams().limit == 50
+        assert ResourceSnapshotQueryParams(limit=1).limit == 1
+        assert ResourceSnapshotQueryParams(limit=100).limit == 100
+
+        # invalid limits
+        with pytest.raises(ValidationError):
+            ResourceSnapshotQueryParams(limit=0)
+
+        with pytest.raises(ValidationError):
+            ResourceSnapshotQueryParams(limit=-5)
+
+        with pytest.raises(ValidationError):
+            ResourceSnapshotQueryParams(limit=101)
+
+        with pytest.raises(ValidationError):
+            ResourceSnapshotQueryParams(offset=-1)
 
     def test_resource_snapshot_response_all_fields(self) -> None:
         snap_id = uuid.uuid4()
@@ -471,6 +511,29 @@ class TestFileSchemas:
         assert params.host_id is None
         assert params.path is None
         assert params.file_type is None
+
+    def test_file_query_params_validation(self) -> None:
+        # valid limits
+        assert FileQueryParams().limit == 50
+        assert FileQueryParams(limit=1).limit == 1
+        assert FileQueryParams(limit=100).limit == 100
+        # valid file types
+        assert FileQueryParams(file_type="file").file_type == "file"
+        assert FileQueryParams(file_type="directory").file_type == "directory"
+
+        # invalid limits
+        with pytest.raises(ValidationError):
+            FileQueryParams(limit=0)
+        with pytest.raises(ValidationError):
+            FileQueryParams(limit=-1)
+        with pytest.raises(ValidationError):
+            FileQueryParams(limit=101)
+
+        # invalid file type
+        with pytest.raises(ValidationError):
+            FileQueryParams(file_type="symlink")
+        with pytest.raises(ValidationError):
+            FileQueryParams(file_type="regular")
 
     def test_file_response_valid(self) -> None:
         f_id = uuid.uuid4()

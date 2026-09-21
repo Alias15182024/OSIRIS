@@ -387,6 +387,35 @@ class TestFilesValidationAndDataCorrectness:
         resp = client.get("/api/files?limit=0", headers=auth_headers)
         assert resp.status_code == 422
 
+    def test_limit_above_maximum_returns_422(
+        self,
+        client: TestClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        resp = client.get("/api/files?limit=101", headers=auth_headers)
+        assert resp.status_code == 422
+
+    def test_invalid_file_type_returns_422(
+        self,
+        client: TestClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        resp1 = client.get("/api/files?file_type=invalid_type", headers=auth_headers)
+        assert resp1.status_code == 422
+        resp2 = client.get("/api/files?file_type=symlink", headers=auth_headers)
+        assert resp2.status_code == 422
+
+    def test_valid_file_types_accepted(
+        self,
+        client: TestClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        resp_file = client.get("/api/files?file_type=file", headers=auth_headers)
+        assert resp_file.status_code == 200
+        resp_dir = client.get("/api/files?file_type=directory", headers=auth_headers)
+        assert resp_dir.status_code == 200
+
+
     def test_invalid_offset_returns_422(
         self,
         client: TestClient,

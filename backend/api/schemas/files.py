@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -14,8 +14,8 @@ class FileQueryParams(BaseModel):
 
     host_id: Optional[UUID] = None
     path: Optional[str] = None
-    file_type: Optional[str] = None
-    limit: int = Field(default=50, ge=1)
+    file_type: Optional[Literal["file", "directory"]] = None
+    limit: int = Field(default=50, ge=1, le=100)
     offset: int = Field(default=0, ge=0)
 
 
