@@ -1,1 +1,0 @@
-"""OSIRIS desktop test package."""
