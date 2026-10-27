@@ -520,6 +520,7 @@ class TestFileSchemas:
         # valid file types
         assert FileQueryParams(file_type="file").file_type == "file"
         assert FileQueryParams(file_type="directory").file_type == "directory"
+        assert FileQueryParams(file_type="symlink").file_type == "symlink"
 
         # invalid limits
         with pytest.raises(ValidationError):
@@ -531,9 +532,9 @@ class TestFileSchemas:
 
         # invalid file type
         with pytest.raises(ValidationError):
-            FileQueryParams(file_type="symlink")
-        with pytest.raises(ValidationError):
             FileQueryParams(file_type="regular")
+        with pytest.raises(ValidationError):
+            FileQueryParams(file_type="invalid_type")
 
     def test_file_response_valid(self) -> None:
         f_id = uuid.uuid4()
@@ -565,6 +566,38 @@ class TestFileSchemas:
         assert res.inode is None
         assert res.file_type is None
         assert res.last_seen_at is None
+
+    def test_file_response_normalizes_legacy_file_types(self) -> None:
+        now = utcnow()
+        res_reg = FileResponse(
+            id=uuid.uuid4(),
+            host_id=uuid.uuid4(),
+            path="/etc/passwd",
+            file_type="regular",
+            first_seen_at=now,
+            created_at=now,
+        )
+        assert res_reg.file_type == "file"
+
+        res_reg_alt = FileResponse(
+            id=uuid.uuid4(),
+            host_id=uuid.uuid4(),
+            path="/etc/passwd.old",
+            file_type="regular_file",
+            first_seen_at=now,
+            created_at=now,
+        )
+        assert res_reg_alt.file_type == "file"
+
+        res_sym = FileResponse(
+            id=uuid.uuid4(),
+            host_id=uuid.uuid4(),
+            path="/bin/sh",
+            file_type="symlink",
+            first_seen_at=now,
+            created_at=now,
+        )
+        assert res_sym.file_type == "symlink"
 
     def test_file_response_orm_serialization(self) -> None:
         f_id = uuid.uuid4()

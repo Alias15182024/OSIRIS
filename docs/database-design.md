@@ -176,7 +176,7 @@ files
 ├── host_id         UUID        FK → hosts.id
 ├── path            VARCHAR     NOT NULL
 ├── inode           BIGINT
-├── file_type       VARCHAR     (e.g., 'regular', 'directory', 'symlink')
+├── file_type       VARCHAR     (e.g., 'file', 'directory', 'symlink')
 ├── first_seen_at   TIMESTAMPTZ NOT NULL
 ├── last_seen_at    TIMESTAMPTZ
 └── created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()

@@ -106,7 +106,7 @@ def seed() -> None:
         sample_file = File(
             host_id=HOST_ID,
             path="/etc/passwd",
-            file_type="regular",
+            file_type="file",
             first_seen_at=now,
             created_at=now,
         )

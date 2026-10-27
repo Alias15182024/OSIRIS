@@ -169,7 +169,7 @@
         break;
       case 'symlink':
       case 'link':
-        badge.classList.add('badge-outline');
+        badge.classList.add('badge-secondary');
         badge.textContent = 'symlink';
         break;
       case 'socket':
@@ -468,7 +468,12 @@
     if (dom.detailFileId) dom.detailFileId.textContent = file.id || '-';
     if (dom.detailHostId) dom.detailHostId.textContent = file.host_id || '-';
     if (dom.detailPath) dom.detailPath.textContent = file.path || '-';
-    if (dom.detailFileType) dom.detailFileType.textContent = file.file_type || '-';
+    if (dom.detailFileType) {
+      const displayType = (file.file_type === 'regular' || file.file_type === 'regular_file')
+        ? 'file'
+        : (file.file_type || '-');
+      dom.detailFileType.textContent = displayType;
+    }
     if (dom.detailInode) {
       dom.detailInode.textContent = file.inode !== null && file.inode !== undefined ? String(file.inode) : '-';
     }

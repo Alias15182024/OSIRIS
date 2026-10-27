@@ -95,6 +95,15 @@ class TestFilesServing:
         assert 'id="files-refresh-btn"' in html
         assert 'id="files-refresh-time"' in html
 
+    def test_index_html_file_type_dropdown_options(self, client: TestClient) -> None:
+        """GET / file_type select dropdown must provide canonical file, directory, and symlink options."""
+        resp = client.get("/")
+        assert resp.status_code == 200
+        html = resp.text
+        assert '<option value="file">Regular File</option>' in html
+        assert '<option value="directory">Directory</option>' in html
+        assert '<option value="symlink">Symbolic Link</option>' in html
+
     def test_index_html_contains_table_and_pagination(
         self, client: TestClient
     ) -> None:
@@ -222,6 +231,17 @@ class TestFilesStaticCodeContract:
         assert "Enter" in self.code
         assert "click" in self.code
 
+    def test_file_type_badge_and_detail_support(self) -> None:
+        """files.js must format badges for canonical types (file, directory, symlink) and legacy regular."""
+        assert "createFileTypeBadge" in self.code
+        assert "'symlink'" in self.code
+        assert "'file'" in self.code
+        assert "'directory'" in self.code
+        assert "'regular'" in self.code
+        assert "badge-secondary" in self.code
+        assert "badge-info" in self.code
+        assert "badge-warning" in self.code
+
     def test_syntax_with_javascriptcore(self) -> None:
         """files.js must parse cleanly in macOS JavaScriptCore runtime."""
         jsc_bin = (
@@ -238,6 +258,63 @@ class TestFilesStaticCodeContract:
         assert (
             result.returncode == 0
         ), f"jsc syntax check failed:\n{result.stdout}\n{result.stderr}"
+
+    def test_badge_formatting_execution_in_javascriptcore(self) -> None:
+        """createFileTypeBadge must format canonical types and legacy aliases in runtime."""
+        import re
+
+        jsc_bin = (
+            "/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc"
+        )
+        if not Path(jsc_bin).exists():
+            pytest.skip("JavaScriptCore CLI not available on this system")
+
+        fn_match = re.search(
+            r"function createFileTypeBadge\(.*?\n  \}", self.code, re.DOTALL
+        )
+        assert fn_match is not None, "createFileTypeBadge definition not found"
+        fn_code = fn_match.group(0)
+
+        script = f"""
+const document = {{
+  createElement: function(tag) {{
+    return {{
+      classList: {{
+        _classes: [],
+        add: function(c) {{ this._classes.push(c); }},
+        contains: function(c) {{ return this._classes.indexOf(c) !== -1; }}
+      }},
+      textContent: ''
+    }};
+  }}
+}};
+{fn_code}
+
+function check(type, expectedClass, expectedText) {{
+  const b = createFileTypeBadge(type);
+  if (!b.classList.contains(expectedClass)) throw new Error('Bad class for ' + type + ': ' + b.classList._classes);
+  if (b.textContent !== expectedText) throw new Error('Bad text for ' + type + ': ' + b.textContent);
+}}
+
+check('file', 'badge-info', 'file');
+check('regular', 'badge-info', 'file');
+check('regular_file', 'badge-info', 'file');
+check('directory', 'badge-warning', 'directory');
+check('dir', 'badge-warning', 'directory');
+check('symlink', 'badge-secondary', 'symlink');
+check('link', 'badge-secondary', 'symlink');
+check('socket', 'badge-secondary', 'socket');
+check('unknown_type', 'badge-outline', 'unknown_type');
+check(null, 'badge-outline', '-');
+print('OK');
+"""
+        result = subprocess.run(
+            [jsc_bin, "-e", script], capture_output=True, text=True
+        )
+        assert (
+            result.returncode == 0
+        ), f"Execution failed:\n{result.stdout}\n{result.stderr}"
+        assert "OK" in result.stdout
 
 
 class TestFilesApiIntegrationRegression:
@@ -267,7 +344,7 @@ class TestFilesApiIntegrationRegression:
     ) -> None:
         """GET /api/files accepts supported filters (path, file_type, limit, offset)."""
         resp = client.get(
-            "/api/files?path=/etc&limit=10&offset=0",
+            "/api/files?path=/etc&file_type=file&limit=10&offset=0",
             headers=auth_headers,
         )
         assert resp.status_code == 200
@@ -275,3 +352,15 @@ class TestFilesApiIntegrationRegression:
         assert data["limit"] == 10
         assert data["offset"] == 0
         assert isinstance(data["items"], list)
+
+        resp_sym = client.get(
+            "/api/files?file_type=symlink",
+            headers=auth_headers,
+        )
+        assert resp_sym.status_code == 200
+
+        resp_dir = client.get(
+            "/api/files?file_type=directory",
+            headers=auth_headers,
+        )
+        assert resp_dir.status_code == 200

@@ -275,13 +275,61 @@ class TestListFilesEndpoint:
         client: TestClient,
         auth_headers: dict[str, str],
         populated_files: list[File],
+        files_db_session: Session,
+        sample_host: Host,
     ) -> None:
-        resp = client.get("/api/files?file_type=directory", headers=auth_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["total"] == 1
-        assert data["items"][0]["path"] == "/tmp"
-        assert data["items"][0]["file_type"] == "directory"
+        # Directory filter
+        resp_dir = client.get("/api/files?file_type=directory", headers=auth_headers)
+        assert resp_dir.status_code == 200
+        data_dir = resp_dir.json()
+        assert data_dir["total"] == 1
+        assert data_dir["items"][0]["path"] == "/tmp"
+        assert data_dir["items"][0]["file_type"] == "directory"
+
+        # File filter
+        resp_file = client.get("/api/files?file_type=file", headers=auth_headers)
+        assert resp_file.status_code == 200
+        data_file = resp_file.json()
+        assert data_file["total"] == 4
+        for item in data_file["items"]:
+            assert item["file_type"] == "file"
+
+        # Symlink filter (no symlinks in populated_files fixture initially)
+        resp_sym = client.get("/api/files?file_type=symlink", headers=auth_headers)
+        assert resp_sym.status_code == 200
+        assert resp_sym.json()["total"] == 0
+
+        # Add symlinks: one to a regular file, one to a directory
+        now = utcnow()
+        sym_file = File(
+            id=uuid.uuid4(),
+            host_id=sample_host.id,
+            path="/usr/bin/python",
+            file_type="symlink",
+            first_seen_at=now,
+            created_at=now,
+        )
+        sym_dir = File(
+            id=uuid.uuid4(),
+            host_id=sample_host.id,
+            path="/var/run",
+            file_type="symlink",
+            first_seen_at=now,
+            created_at=now,
+        )
+        files_db_session.add_all([sym_file, sym_dir])
+        files_db_session.commit()
+
+        # Re-query symlink filter: now returns both symlinks
+        resp_sym2 = client.get("/api/files?file_type=symlink", headers=auth_headers)
+        assert resp_sym2.status_code == 200
+        data_sym2 = resp_sym2.json()
+        assert data_sym2["total"] == 2
+        paths_sym = [item["path"] for item in data_sym2["items"]]
+        assert "/usr/bin/python" in paths_sym
+        assert "/var/run" in paths_sym
+        for item in data_sym2["items"]:
+            assert item["file_type"] == "symlink"
 
     def test_path_prefix_matching(
         self,
@@ -402,7 +450,7 @@ class TestFilesValidationAndDataCorrectness:
     ) -> None:
         resp1 = client.get("/api/files?file_type=invalid_type", headers=auth_headers)
         assert resp1.status_code == 422
-        resp2 = client.get("/api/files?file_type=symlink", headers=auth_headers)
+        resp2 = client.get("/api/files?file_type=regular", headers=auth_headers)
         assert resp2.status_code == 422
 
     def test_valid_file_types_accepted(
@@ -414,6 +462,167 @@ class TestFilesValidationAndDataCorrectness:
         assert resp_file.status_code == 200
         resp_dir = client.get("/api/files?file_type=directory", headers=auth_headers)
         assert resp_dir.status_code == 200
+        resp_sym = client.get("/api/files?file_type=symlink", headers=auth_headers)
+        assert resp_sym.status_code == 200
+
+    def test_filter_by_file_type_legacy_regular_compatibility(
+        self,
+        client: TestClient,
+        auth_headers: dict[str, str],
+        files_db_session: Session,
+        sample_host: Host,
+    ) -> None:
+        """Verify backward compatibility: file_type=file matches 'file', 'regular', and 'regular_file'."""
+        now = utcnow()
+        f_regular = File(
+            id=uuid.uuid4(),
+            host_id=sample_host.id,
+            path="/etc/legacy.conf",
+            file_type="regular",
+            first_seen_at=now,
+            created_at=now,
+        )
+        f_regular_alt = File(
+            id=uuid.uuid4(),
+            host_id=sample_host.id,
+            path="/etc/legacy_alt.conf",
+            file_type="regular_file",
+            first_seen_at=now + timedelta(seconds=1),
+            created_at=now + timedelta(seconds=1),
+        )
+        f_file = File(
+            id=uuid.uuid4(),
+            host_id=sample_host.id,
+            path="/etc/modern.conf",
+            file_type="file",
+            first_seen_at=now + timedelta(seconds=2),
+            created_at=now + timedelta(seconds=2),
+        )
+        f_symlink_file = File(
+            id=uuid.uuid4(),
+            host_id=sample_host.id,
+            path="/etc/link_file.conf",
+            file_type="symlink",
+            first_seen_at=now + timedelta(seconds=3),
+            created_at=now + timedelta(seconds=3),
+        )
+        f_symlink_dir = File(
+            id=uuid.uuid4(),
+            host_id=sample_host.id,
+            path="/etc/link_dir",
+            file_type="symlink",
+            first_seen_at=now + timedelta(seconds=4),
+            created_at=now + timedelta(seconds=4),
+        )
+        f_dir = File(
+            id=uuid.uuid4(),
+            host_id=sample_host.id,
+            path="/etc/conf.d",
+            file_type="directory",
+            first_seen_at=now + timedelta(seconds=5),
+            created_at=now + timedelta(seconds=5),
+        )
+        files_db_session.add_all([
+            f_regular,
+            f_regular_alt,
+            f_file,
+            f_symlink_file,
+            f_symlink_dir,
+            f_dir,
+        ])
+        files_db_session.commit()
+
+        # Query file_type=file: matches 'file', 'regular', and 'regular_file'
+        resp_file = client.get(
+            f"/api/files?host_id={sample_host.id}&path=/etc/&file_type=file",
+            headers=auth_headers,
+        )
+        assert resp_file.status_code == 200
+        data_file = resp_file.json()
+        assert data_file["total"] == 3
+        paths_file = [item["path"] for item in data_file["items"]]
+        assert "/etc/legacy.conf" in paths_file
+        assert "/etc/legacy_alt.conf" in paths_file
+        assert "/etc/modern.conf" in paths_file
+        assert "/etc/link_file.conf" not in paths_file
+        assert "/etc/link_dir" not in paths_file
+        assert "/etc/conf.d" not in paths_file
+        # Verify FileResponse serializes all legacy variants as canonical 'file'
+        for item in data_file["items"]:
+            assert item["file_type"] == "file"
+
+        # Verify pagination across mixed legacy and canonical dataset
+        resp_p1 = client.get(
+            f"/api/files?host_id={sample_host.id}&path=/etc/&file_type=file&limit=2&offset=0",
+            headers=auth_headers,
+        )
+        assert resp_p1.status_code == 200
+        data_p1 = resp_p1.json()
+        assert data_p1["total"] == 3
+        assert len(data_p1["items"]) == 2
+
+        resp_p2 = client.get(
+            f"/api/files?host_id={sample_host.id}&path=/etc/&file_type=file&limit=2&offset=2",
+            headers=auth_headers,
+        )
+        assert resp_p2.status_code == 200
+        data_p2 = resp_p2.json()
+        assert data_p2["total"] == 3
+        assert len(data_p2["items"]) == 1
+
+        # Query file_type=symlink: matches both symlink to file and symlink to directory
+        resp_sym = client.get(
+            f"/api/files?host_id={sample_host.id}&path=/etc/&file_type=symlink",
+            headers=auth_headers,
+        )
+        assert resp_sym.status_code == 200
+        data_sym = resp_sym.json()
+        assert data_sym["total"] == 2
+        paths_sym = [item["path"] for item in data_sym["items"]]
+        assert "/etc/link_file.conf" in paths_sym
+        assert "/etc/link_dir" in paths_sym
+        for item in data_sym["items"]:
+            assert item["file_type"] == "symlink"
+
+        # Query file_type=directory: matches only directory
+        resp_dir = client.get(
+            f"/api/files?host_id={sample_host.id}&path=/etc/&file_type=directory",
+            headers=auth_headers,
+        )
+        assert resp_dir.status_code == 200
+        data_dir = resp_dir.json()
+        assert data_dir["total"] == 1
+        assert data_dir["items"][0]["path"] == "/etc/conf.d"
+        assert data_dir["items"][0]["file_type"] == "directory"
+
+    def test_seeded_file_filtering(
+        self,
+        client: TestClient,
+        auth_headers: dict[str, str],
+        files_db_session: Session,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Verify that Phase 1 seeded file /etc/passwd is retrieved when querying file_type=file."""
+        import database.seeds.seed_phase1 as seed_module
+
+        monkeypatch.setattr(seed_module, "SessionLocal", lambda: files_db_session)
+        seed_module.seed()
+
+        resp = client.get("/api/files?file_type=file", headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["items"][0]["path"] == "/etc/passwd"
+        assert data["items"][0]["file_type"] == "file"
+
+        # Verify other file types exclude the seeded file
+        resp_dir = client.get("/api/files?file_type=directory", headers=auth_headers)
+        assert resp_dir.status_code == 200
+        assert resp_dir.json()["total"] == 0
+
+        resp_sym = client.get("/api/files?file_type=symlink", headers=auth_headers)
+        assert resp_sym.status_code == 200
+        assert resp_sym.json()["total"] == 0
 
 
     def test_invalid_offset_returns_422(

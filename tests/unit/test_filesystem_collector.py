@@ -64,6 +64,106 @@ class TestParserFunctions:
         assert determine_object_type(0, test_dir) == "directory"
         assert determine_object_type(0, test_file) == "file"
 
+    def test_determine_object_type_with_symlinks(self, tmp_path: Path):
+        # 1. Symlink to regular file
+        target_file = tmp_path / "target_file.txt"
+        target_file.write_text("data")
+        symlink_to_file = tmp_path / "link_file"
+        symlink_to_file.symlink_to(target_file)
+        assert determine_object_type(0, symlink_to_file) == "symlink"
+
+        # 2. Symlink to directory (critical: must resolve to symlink, not directory)
+        target_dir = tmp_path / "target_dir"
+        target_dir.mkdir()
+        symlink_to_dir = tmp_path / "link_dir"
+        symlink_to_dir.symlink_to(target_dir)
+        assert determine_object_type(0, symlink_to_dir) == "symlink"
+        # Even if IN_ISDIR mask was passed, symlink on disk takes precedence
+        assert determine_object_type(IN_ISDIR, symlink_to_dir) == "symlink"
+
+        # 3. Broken symlink
+        broken_symlink = tmp_path / "broken_link"
+        broken_symlink.symlink_to(tmp_path / "nonexistent")
+        assert determine_object_type(0, broken_symlink) == "symlink"
+
+    def test_determine_object_type_with_deleted_path_falls_back_to_mask(self, tmp_path: Path):
+        deleted_file = tmp_path / "deleted.txt"
+        # When path disappears and IN_ISDIR is set -> preserves directory classification
+        assert determine_object_type(IN_ISDIR, deleted_file) == "directory"
+        assert determine_object_type(IN_DELETE | IN_ISDIR, deleted_file) == "directory"
+        assert determine_object_type(IN_DELETE_SELF | IN_ISDIR, deleted_file) == "directory"
+        assert determine_object_type(IN_MOVED_FROM | IN_ISDIR, deleted_file) == "directory"
+        assert determine_object_type(IN_MOVED_TO | IN_ISDIR, deleted_file) == "directory"
+        assert determine_object_type(IN_ISDIR, None) == "directory"
+        # When path disappears and IN_ISDIR is absent -> defaults safely to file
+        assert determine_object_type(IN_DELETE, deleted_file) == "file"
+        assert determine_object_type(IN_CREATE, deleted_file) == "file"
+        assert determine_object_type(IN_MODIFY, deleted_file) == "file"
+        assert determine_object_type(IN_MOVED_FROM, deleted_file) == "file"
+        assert determine_object_type(0, deleted_file) == "file"
+        assert determine_object_type(0, None) == "file"
+
+    def test_determine_object_type_deleted_symlink_falls_back_to_file(self, tmp_path: Path):
+        """A deleted symlink cannot be inferred from inotify mask alone (no IN_ISSYMLINK flag)."""
+        # 1. Symlink to regular file
+        target_file = tmp_path / "target_file.txt"
+        target_file.write_text("hello")
+        symlink_to_file = tmp_path / "symlink_file"
+        symlink_to_file.symlink_to(target_file)
+        # While the symlink exists on disk, it is correctly classified as "symlink"
+        assert determine_object_type(0, symlink_to_file) == "symlink"
+        assert determine_object_type(IN_DELETE, symlink_to_file) == "symlink"
+
+        # Once the symlink is deleted before inspection, it cannot be identified from mask
+        symlink_to_file.unlink()
+        assert not symlink_to_file.exists(follow_symlinks=False)
+        assert determine_object_type(IN_DELETE, symlink_to_file) == "file"
+        assert determine_object_type(0, symlink_to_file) == "file"
+
+        # 2. Symlink to directory
+        target_dir = tmp_path / "target_dir"
+        target_dir.mkdir()
+        symlink_to_dir = tmp_path / "symlink_dir"
+        symlink_to_dir.symlink_to(target_dir)
+        # While present, resolves to "symlink"
+        assert determine_object_type(0, symlink_to_dir) == "symlink"
+
+        # Once deleted, inotify emits IN_DELETE without IN_ISDIR for unlinking a symlink
+        symlink_to_dir.unlink()
+        assert not symlink_to_dir.exists(follow_symlinks=False)
+        assert determine_object_type(IN_DELETE, symlink_to_dir) == "file"
+
+    def test_determine_object_type_inaccessible_path(self, tmp_path: Path):
+        """Inaccessible paths (PermissionError/OSError) fall back safely to mask or file."""
+        inaccessible = tmp_path / "inaccessible.txt"
+        with patch.object(Path, "is_symlink", side_effect=PermissionError("Permission denied")):
+            # With IN_ISDIR -> preserves directory indication
+            assert determine_object_type(IN_ISDIR, inaccessible) == "directory"
+            assert determine_object_type(IN_MODIFY | IN_ISDIR, inaccessible) == "directory"
+            # Without IN_ISDIR -> defaults safely to file (cannot infer symlink from mask)
+            assert determine_object_type(0, inaccessible) == "file"
+            assert determine_object_type(IN_MODIFY, inaccessible) == "file"
+
+        with patch.object(Path, "is_dir", side_effect=PermissionError("Permission denied")):
+            assert determine_object_type(IN_ISDIR, inaccessible) == "directory"
+            assert determine_object_type(0, inaccessible) == "file"
+
+    def test_determine_object_type_with_empty_or_whitespace_or_dot(self):
+        """Empty or dot paths must not erroneously resolve to current directory via Path.is_dir()."""
+        assert determine_object_type(0, "") == "file"
+        assert determine_object_type(IN_CREATE, "") == "file"
+        assert determine_object_type(IN_ISDIR, "") == "directory"
+        assert determine_object_type(0, "   ") == "file"
+        assert determine_object_type(0, ".") == "file"
+        assert determine_object_type(0, "./") == "file"
+        assert determine_object_type(0, ".//") == "file"
+        assert determine_object_type(IN_ISDIR, "./") == "directory"
+        assert determine_object_type(0, Path("")) == "file"
+        assert determine_object_type(0, Path(".")) == "file"
+        assert determine_object_type(0, Path("./")) == "file"
+        assert determine_object_type(IN_ISDIR, Path(".")) == "directory"
+        assert determine_object_type(IN_ISDIR, Path("./")) == "directory"
+
     def test_get_inode_real_file(self, tmp_path: Path):
         test_file = tmp_path / "file.txt"
         test_file.write_text("content")
@@ -75,6 +175,31 @@ class TestParserFunctions:
     def test_get_inode_missing_or_none(self, tmp_path: Path):
         assert get_inode(None) is None
         assert get_inode(tmp_path / "nonexistent.txt") is None
+
+    def test_get_inode_symlink_and_inaccessible(self, tmp_path: Path):
+        # Symlink
+        target = tmp_path / "target.txt"
+        target.write_text("hello")
+        link = tmp_path / "link.txt"
+        link.symlink_to(target)
+        link_inode = get_inode(link)
+        assert link_inode is not None
+        assert isinstance(link_inode, int)
+
+        # Broken symlink (target deleted, symlink still present)
+        broken = tmp_path / "broken_link"
+        broken.symlink_to(tmp_path / "missing")
+        broken_inode = get_inode(broken)
+        assert broken_inode is not None
+        assert isinstance(broken_inode, int)
+
+        # Inaccessible path (PermissionError)
+        with patch("os.stat", side_effect=PermissionError("Access denied")):
+            assert get_inode(target) is None
+
+        # Deleted symlink
+        broken.unlink()
+        assert get_inode(broken) is None
 
     def test_map_action_and_event_type(self):
         assert map_action_and_event_type(IN_CREATE) == ("create", "filesystem.create")
@@ -114,6 +239,91 @@ class TestParserFunctions:
         assert obs_dict["payload"]["name"] == "test.txt"
         assert obs_dict["payload"]["watch_path"] == str(tmp_path)
         assert obs_dict["payload"]["timestamp_source"] == "collection_time"
+
+    def test_parse_inotify_event_symlink(self, tmp_path: Path):
+        target = tmp_path / "target.txt"
+        target.write_text("data")
+        link = tmp_path / "symlink.txt"
+        link.symlink_to(target)
+
+        ev = InotifyEvent(
+            wd=1,
+            mask=IN_CREATE,
+            cookie=0,
+            name="symlink.txt",
+            dir_path=tmp_path,
+            full_path=link,
+        )
+        obs_dict = parse_inotify_event(ev, TEST_HOST_ID)
+        assert obs_dict["object_type"] == "symlink"
+        assert obs_dict["object_path"] == str(link)
+
+    def test_parse_inotify_event_symlink_to_directory(self, tmp_path: Path):
+        target_dir = tmp_path / "target_dir"
+        target_dir.mkdir()
+        link_dir = tmp_path / "link_dir"
+        link_dir.symlink_to(target_dir)
+
+        ev = InotifyEvent(
+            wd=1,
+            mask=IN_CREATE,
+            cookie=0,
+            name="link_dir",
+            dir_path=tmp_path,
+            full_path=link_dir,
+        )
+        obs_dict = parse_inotify_event(ev, TEST_HOST_ID)
+        assert obs_dict["object_type"] == "symlink"
+        assert obs_dict["object_path"] == str(link_dir)
+
+    def test_parse_inotify_event_with_disappeared_paths(self, tmp_path: Path):
+        """Events for entities that disappear before parsing are classified via fallback."""
+        deleted_dir = tmp_path / "disappeared_dir"
+        ev_dir = InotifyEvent(
+            wd=1,
+            mask=IN_DELETE | IN_ISDIR,
+            cookie=0,
+            name="disappeared_dir",
+            dir_path=tmp_path,
+            full_path=deleted_dir,
+        )
+        obs_dir = parse_inotify_event(ev_dir, TEST_HOST_ID)
+        assert obs_dir["object_type"] == "directory"
+        assert obs_dir["event_type"] == "filesystem.delete"
+        assert obs_dir["action"] == "delete"
+        assert obs_dir["payload"]["is_dir"] is True
+        assert obs_dir["payload"]["inode"] is None
+
+        deleted_file = tmp_path / "disappeared_file.txt"
+        ev_file = InotifyEvent(
+            wd=1,
+            mask=IN_DELETE,
+            cookie=0,
+            name="disappeared_file.txt",
+            dir_path=tmp_path,
+            full_path=deleted_file,
+        )
+        obs_file = parse_inotify_event(ev_file, TEST_HOST_ID)
+        assert obs_file["object_type"] == "file"
+        assert obs_file["event_type"] == "filesystem.delete"
+        assert obs_file["action"] == "delete"
+        assert obs_file["payload"]["is_dir"] is False
+        assert obs_file["payload"]["inode"] is None
+
+        deleted_symlink = tmp_path / "disappeared_symlink"
+        ev_sym = InotifyEvent(
+            wd=1,
+            mask=IN_DELETE,
+            cookie=0,
+            name="disappeared_symlink",
+            dir_path=tmp_path,
+            full_path=deleted_symlink,
+        )
+        obs_sym = parse_inotify_event(ev_sym, TEST_HOST_ID)
+        assert obs_sym["object_type"] == "file"
+        assert obs_sym["payload"]["is_dir"] is False
+        assert obs_sym["payload"]["inode"] is None
+
 
 
 # ============================================================================
@@ -214,6 +424,59 @@ class TestMovePairing:
         assert obs.payload["from_path"] is None
         assert obs.payload["to_path"] == str(new_file)
         assert obs.payload["timestamp_source"] == "collection_time"
+
+    def test_paired_move_disappeared_destination(self, tmp_path: Path):
+        """Move pair where destination disappeared before inspection uses fallback."""
+        from_dir = tmp_path / "from_dir"
+        to_dir = tmp_path / "to_dir"
+
+        from_ev = InotifyEvent(
+            wd=1,
+            mask=IN_MOVED_FROM | IN_ISDIR,
+            cookie=123,
+            name="from_dir",
+            dir_path=tmp_path,
+            full_path=from_dir,
+        )
+        to_ev = InotifyEvent(
+            wd=1,
+            mask=IN_MOVED_TO | IN_ISDIR,
+            cookie=123,
+            name="to_dir",
+            dir_path=tmp_path,
+            full_path=to_dir,
+        )
+
+        obs_dir = parse_move_pair(from_ev, to_ev, TEST_HOST_ID)
+        assert obs_dir["object_type"] == "directory"
+        assert obs_dir["payload"]["is_dir"] is True
+        assert obs_dir["payload"]["inode"] is None
+
+        # File move where destination disappeared
+        from_file = tmp_path / "from.txt"
+        to_file = tmp_path / "to.txt"
+        from_f_ev = InotifyEvent(
+            wd=1,
+            mask=IN_MOVED_FROM,
+            cookie=124,
+            name="from.txt",
+            dir_path=tmp_path,
+            full_path=from_file,
+        )
+        to_f_ev = InotifyEvent(
+            wd=1,
+            mask=IN_MOVED_TO,
+            cookie=124,
+            name="to.txt",
+            dir_path=tmp_path,
+            full_path=to_file,
+        )
+
+        obs_file = parse_move_pair(from_f_ev, to_f_ev, TEST_HOST_ID)
+        assert obs_file["object_type"] == "file"
+        assert obs_file["payload"]["is_dir"] is False
+        assert obs_file["payload"]["inode"] is None
+
 
 
 # ============================================================================
@@ -509,6 +772,58 @@ class TestFilesystemCollector:
         assert obs.payload["is_dir"] is True
         assert obs.payload["timestamp_source"] == "collection_time"
 
+    def test_create_symlink_to_file_observation(self, tmp_path: Path):
+        backend = MockInotifyBackend()
+        collector = FilesystemCollector(TEST_HOST_ID, backend=backend)
+
+        target = tmp_path / "target_file.txt"
+        target.write_text("data")
+        link = tmp_path / "link_file"
+        link.symlink_to(target)
+
+        backend.inject_event(
+            wd=1,
+            mask=IN_CREATE,
+            name="link_file",
+            dir_path=tmp_path,
+            full_path=link,
+        )
+
+        observations = collector.collect_observations()
+        assert len(observations) == 1
+        obs = observations[0]
+
+        assert obs.event_type == "filesystem.create"
+        assert obs.action == "create"
+        assert obs.object_type == "symlink"
+        assert obs.object_path == str(link)
+
+    def test_create_symlink_to_directory_observation(self, tmp_path: Path):
+        backend = MockInotifyBackend()
+        collector = FilesystemCollector(TEST_HOST_ID, backend=backend)
+
+        target_dir = tmp_path / "target_subdir"
+        target_dir.mkdir()
+        link_dir = tmp_path / "link_to_dir"
+        link_dir.symlink_to(target_dir)
+
+        backend.inject_event(
+            wd=1,
+            mask=IN_CREATE,
+            name="link_to_dir",
+            dir_path=tmp_path,
+            full_path=link_dir,
+        )
+
+        observations = collector.collect_observations()
+        assert len(observations) == 1
+        obs = observations[0]
+
+        assert obs.event_type == "filesystem.create"
+        assert obs.action == "create"
+        assert obs.object_type == "symlink"
+        assert obs.object_path == str(link_dir)
+
     def test_modify_file_observation(self, tmp_path: Path):
         backend = MockInotifyBackend()
         collector = FilesystemCollector(TEST_HOST_ID, backend=backend)
@@ -545,8 +860,63 @@ class TestFilesystemCollector:
 
         assert obs.event_type == "filesystem.delete"
         assert obs.action == "delete"
+        assert obs.object_type == "file"
+        assert obs.payload["is_dir"] is False
         assert obs.payload["inode"] is None
         assert obs.payload["timestamp_source"] == "collection_time"
+
+    def test_delete_directory_observation(self, tmp_path: Path):
+        backend = MockInotifyBackend()
+        collector = FilesystemCollector(TEST_HOST_ID, backend=backend)
+
+        d = tmp_path / "deleted_dir"
+
+        backend.inject_event(
+            wd=1,
+            mask=IN_DELETE | IN_ISDIR,
+            name="deleted_dir",
+            dir_path=tmp_path,
+            full_path=d,
+        )
+
+        observations = collector.collect_observations()
+        assert len(observations) == 1
+        obs = observations[0]
+
+        assert obs.event_type == "filesystem.delete"
+        assert obs.action == "delete"
+        assert obs.object_type == "directory"
+        assert obs.payload["is_dir"] is True
+        assert obs.payload["inode"] is None
+        assert obs.payload["timestamp_source"] == "collection_time"
+
+    def test_delete_symlink_observation_falls_back_to_file(self, tmp_path: Path):
+        backend = MockInotifyBackend()
+        collector = FilesystemCollector(TEST_HOST_ID, backend=backend)
+
+        link = tmp_path / "deleted_link"
+
+        # In Linux inotify, deleting a symlink emits IN_DELETE without IN_ISDIR.
+        # Once unlinked, the path does not exist on disk, so it safely falls back to "file".
+        backend.inject_event(
+            wd=1,
+            mask=IN_DELETE,
+            name="deleted_link",
+            dir_path=tmp_path,
+            full_path=link,
+        )
+
+        observations = collector.collect_observations()
+        assert len(observations) == 1
+        obs = observations[0]
+
+        assert obs.event_type == "filesystem.delete"
+        assert obs.action == "delete"
+        assert obs.object_type == "file"
+        assert obs.payload["is_dir"] is False
+        assert obs.payload["inode"] is None
+        assert obs.payload["timestamp_source"] == "collection_time"
+
 
     def test_rapid_consecutive_events_drained(self, tmp_path: Path):
         backend = MockInotifyBackend()

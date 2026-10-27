@@ -313,6 +313,59 @@ class TestFile:
         db_session.flush()
         assert f.id is not None
 
+    def test_create_file_canonical_types(
+        self, db_session: Session, sample_host: Host
+    ) -> None:
+        """Verify files table persists canonical types ('file', 'directory', 'symlink') and preserves legacy values."""
+        now = utcnow()
+        f_file = File(
+            host_id=sample_host.id,
+            path="/bin/ls",
+            file_type="file",
+            first_seen_at=now,
+            created_at=now,
+        )
+        f_dir = File(
+            host_id=sample_host.id,
+            path="/usr/local",
+            file_type="directory",
+            first_seen_at=now,
+            created_at=now,
+        )
+        f_sym_file = File(
+            host_id=sample_host.id,
+            path="/bin/sh",
+            file_type="symlink",
+            first_seen_at=now,
+            created_at=now,
+        )
+        f_sym_dir = File(
+            host_id=sample_host.id,
+            path="/var/run",
+            file_type="symlink",
+            first_seen_at=now,
+            created_at=now,
+        )
+        f_legacy = File(
+            host_id=sample_host.id,
+            path="/etc/passwd.old",
+            file_type="regular",
+            first_seen_at=now,
+            created_at=now,
+        )
+        db_session.add_all([f_file, f_dir, f_sym_file, f_sym_dir, f_legacy])
+        db_session.flush()
+        assert f_file.id is not None
+        assert f_dir.id is not None
+        assert f_sym_file.id is not None
+        assert f_sym_dir.id is not None
+        assert f_legacy.id is not None
+        assert f_file.file_type == "file"
+        assert f_dir.file_type == "directory"
+        assert f_sym_file.file_type == "symlink"
+        assert f_sym_dir.file_type == "symlink"
+        assert f_legacy.file_type == "regular"
+
     def test_path_required(
         self, db_session: Session, sample_host: Host
     ) -> None:

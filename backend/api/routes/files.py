@@ -30,7 +30,7 @@ def list_files(
     - host_id: UUID of monitored host
     - path: Path prefix filter (matches exact path or entries within that directory tree;
             escapes SQL wildcards like '%' and '_')
-    - file_type: Exact file type (e.g. 'file', 'directory')
+    - file_type: Exact file type ('file', 'directory', 'symlink')
     - limit: Page size (default 50, minimum 1)
     - offset: Page offset (default 0, minimum 0)
     """
@@ -38,7 +38,10 @@ def list_files(
     if params.host_id is not None:
         conditions.append(File.host_id == params.host_id)
     if params.file_type is not None:
-        conditions.append(File.file_type == params.file_type)
+        if params.file_type == "file":
+            conditions.append(File.file_type.in_(["file", "regular", "regular_file"]))
+        else:
+            conditions.append(File.file_type == params.file_type)
     if params.path is not None:
         if params.path.endswith("/"):
             conditions.append(File.path.startswith(params.path, autoescape=True))

@@ -4,7 +4,7 @@ Transforms raw Linux inotify events into structured observation dictionaries
 conforming to the OSIRIS RawObservation schema.
 
 Responsibilities:
-- Determine filesystem object type (file vs directory).
+- Determine filesystem object type (file, directory, or symlink).
 - Safely extract inode information when available without assuming path permanence.
 - Map inotify mask bits to canonical event types (filesystem.create, filesystem.modify,
   filesystem.delete, filesystem.move) and actions (create, modify, delete, move).
@@ -34,21 +34,34 @@ from collectors.filesystem.inotify import (
 
 
 def determine_object_type(mask: int, path: Path | str | None = None) -> str:
-    """Determine whether the observed entity is a file or directory.
+    """Determine whether the observed entity is a file, directory, or symlink.
 
-    Checks the inotify mask flag first (``IN_ISDIR``). If not indicated by mask,
-    checks the filesystem if the path is currently accessible. Defaults to ``"file"``.
+    Inspects the filesystem path first to detect symbolic links (including symlinks
+    that point to directories) before directory status. If the path is not accessible,
+    disappears before inspection, or is not provided, falls back to the inotify mask:
+    - If ``IN_ISDIR`` is set, returns ``"directory"`` (preserving Linux inotify's
+      indication that the event subject is a directory).
+    - If ``IN_ISDIR`` is absent, defaults safely to ``"file"``.
+
+    Note: Linux inotify only indicates directory status via ``IN_ISDIR``; it provides
+    no mask flag for symbolic links. A deleted or inaccessible symlink cannot be
+    identified from the inotify mask alone and safely defaults to ``"file"``.
     """
+    if path is not None:
+        raw_str = str(path).strip()
+        if raw_str:
+            try:
+                p = Path(raw_str)
+                if p != Path("."):
+                    if p.is_symlink():
+                        return "symlink"
+                    if p.is_dir():
+                        return "directory"
+            except (OSError, ValueError):
+                pass
+
     if mask & IN_ISDIR:
         return "directory"
-
-    if path is not None:
-        try:
-            p = Path(path)
-            if p.is_dir():
-                return "directory"
-        except (OSError, ValueError):
-            pass
 
     return "file"
 

@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class FileQueryParams(BaseModel):
@@ -14,7 +14,7 @@ class FileQueryParams(BaseModel):
 
     host_id: Optional[UUID] = None
     path: Optional[str] = None
-    file_type: Optional[Literal["file", "directory"]] = None
+    file_type: Optional[Literal["file", "directory", "symlink"]] = None
     limit: int = Field(default=50, ge=1, le=100)
     offset: int = Field(default=0, ge=0)
 
@@ -32,6 +32,14 @@ class FileResponse(BaseModel):
     first_seen_at: datetime
     last_seen_at: Optional[datetime] = None
     created_at: datetime
+
+    @field_validator("file_type", mode="before")
+    @classmethod
+    def normalize_file_type(cls, v: Optional[str]) -> Optional[str]:
+        """Normalize legacy file type strings ('regular', 'regular_file') to canonical 'file'."""
+        if v in ("regular", "regular_file"):
+            return "file"
+        return v
 
 
 class PaginatedFileResponse(BaseModel):

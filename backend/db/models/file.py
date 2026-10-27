@@ -39,6 +39,7 @@ class File(Base):
     inode: Mapped[Optional[int]] = mapped_column(
         BigInteger, nullable=True
     )
+    # Canonical values: 'file', 'directory', 'symlink'. Preserves legacy 'regular'.
     file_type: Mapped[Optional[str]] = mapped_column(
         String(50), nullable=True
     )

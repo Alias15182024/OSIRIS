@@ -65,6 +65,7 @@ def test_seed_creates_expected_records_and_authenticable_admin(
 
     file_entry = test_seed_session.execute(select(File)).scalar_one()
     assert file_entry.path == "/etc/passwd"
+    assert file_entry.file_type == "file"
 
     snapshot = test_seed_session.execute(select(ResourceSnapshot)).scalar_one()
     assert snapshot.cpu_percent == 12.5
