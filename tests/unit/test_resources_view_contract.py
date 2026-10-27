@@ -20,13 +20,16 @@ Verifies:
 
 from __future__ import annotations
 
+from typing import Generator
 from pathlib import Path
 import subprocess
 import uuid
 
 import pytest
+from sqlalchemy.orm import Session
 from starlette.testclient import TestClient
 
+from backend.api.deps import get_db
 from backend.api.security import create_access_token
 from backend.main import app
 
@@ -41,9 +44,14 @@ RESOURCES_JS_PATH = (
 
 
 @pytest.fixture
-def client() -> TestClient:
-    """Provide a TestClient for testing static routes and API integrity."""
-    return TestClient(app)
+def client(contract_db_session: Session) -> Generator[TestClient, None, None]:
+    """Provide a TestClient with get_db overridden to use isolated contract_db_session."""
+    app.dependency_overrides[get_db] = lambda: contract_db_session
+    try:
+        with TestClient(app) as test_client:
+            yield test_client
+    finally:
+        app.dependency_overrides.pop(get_db, None)
 
 
 @pytest.fixture

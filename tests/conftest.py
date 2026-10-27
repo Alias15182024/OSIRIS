@@ -8,12 +8,14 @@ PostgreSQL test database for integration tests controlled by environment).
 The test database is created fresh for each test session and torn down after.
 """
 
+from typing import Generator
 import uuid
 from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from backend.db.base import Base
 
@@ -35,6 +37,7 @@ TEST_ROOT_USER_ID = uuid.UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb01")
 TEST_REGULAR_USER_ID = uuid.UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb02")
 TEST_PROCESS_ID = uuid.UUID("cccccccc-cccc-4ccc-8ccc-cccccccccccc")
 TEST_APP_USER_ID = uuid.UUID("dddddddd-dddd-4ddd-8ddd-dddddddddddd")
+CONTRACT_ADMIN_USER_ID = uuid.UUID("00000000-0000-4000-8000-000000000100")
 
 
 @pytest.fixture(scope="session")
@@ -182,3 +185,48 @@ def sample_event() -> dict:
         "action": "test",
         "severity": "info",
     }
+
+
+@pytest.fixture
+def contract_db_session() -> Generator[Session, None, None]:
+    """Provide an isolated, thread-safe in-memory SQLite database session for contract tests.
+
+    Creates all tables from Base.metadata, enables SQLite foreign keys, and seeds
+    the minimal required active admin user expected by contract test authentication.
+    Cleans up and disposes the schema and engine safely after each test.
+    """
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+
+    @event.listens_for(engine, "connect")
+    def set_sqlite_pragma(dbapi_conn, connection_record):  # type: ignore[no-untyped-def]
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    Base.metadata.create_all(engine)
+    session = Session(engine)
+
+    try:
+        admin_user = AppUser(
+            id=CONTRACT_ADMIN_USER_ID,
+            username="admin",
+            password_hash="$2b$12$TEST_HASH_NOT_REAL",
+            display_name="OSIRIS Administrator",
+            role="admin",
+            is_active=True,
+            created_at=utcnow(),
+        )
+        session.add(admin_user)
+        session.commit()
+
+        yield session
+    finally:
+        session.close()
+        try:
+            Base.metadata.drop_all(engine)
+        finally:
+            engine.dispose()
