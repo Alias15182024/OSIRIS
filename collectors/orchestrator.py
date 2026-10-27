@@ -24,9 +24,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from backend.services.events.process_lifecycle import ProcessLifecycleService
 from backend.services.events.processor import BatchResult, EventProcessor
 from backend.services.events.repository import EventRepository
+from backend.services.events.resolver import (
+    DatabaseIdentityResolver,
+    IdentityResolver,
+    NoOpIdentityResolver,
+)
 from backend.services.events.schemas import NormalizedEvent, RawObservation
+from backend.services.events.user_sync import LinuxUserSynchronizer
 from collectors.filesystem.collector import FilesystemCollector
 from collectors.filesystem.inotify import InotifyBackend
 from collectors.process.collector import ProcessCollector
@@ -74,6 +81,10 @@ class OrchestratorConfig:
         Whether resource collector also emits granular cpu/memory/disk events. Default: False.
     proc_dir:
         Path to proc filesystem. Injected for unit testing. Default: "/proc".
+    passwd_file:
+        Path to `/etc/passwd` file for user synchronization. Default: "/etc/passwd".
+    user_provider:
+        Optional callable returning `list[tuple[int, str]]` for isolated user sync tests.
     fs_backend:
         Optional custom inotify backend (e.g. MockInotifyBackend for testing).
     statvfs_fn:
@@ -92,6 +103,8 @@ class OrchestratorConfig:
     filesystem_recursive: bool = True
     resource_granular: bool = False
     proc_dir: Path | str = "/proc"
+    passwd_file: Path | str | None = "/etc/passwd"
+    user_provider: Callable[[], list[tuple[int, str]]] | None = None
     fs_backend: InotifyBackend | None = None
     statvfs_fn: Callable[[str], Any] | None = None
     monotonic_clock: Callable[[], float] = time.monotonic
@@ -137,6 +150,8 @@ class CollectorOrchestrator:
         Optional injected EventProcessor instance.
     event_repository:
         Optional injected EventRepository instance for persistence.
+    identity_resolver:
+        Optional injected IdentityResolver instance.
     event_callback:
         Optional callback invoked with normalized events.
     """
@@ -150,6 +165,9 @@ class CollectorOrchestrator:
         filesystem_collector: FilesystemCollector | None = None,
         event_processor: EventProcessor | None = None,
         event_repository: EventRepository | None = None,
+        identity_resolver: IdentityResolver | None = None,
+        user_synchronizer: LinuxUserSynchronizer | None = None,
+        process_lifecycle_service: ProcessLifecycleService | None = None,
         event_callback: Callable[[list[NormalizedEvent]], None] | None = None,
     ) -> None:
         self.config = config
@@ -185,8 +203,43 @@ class CollectorOrchestrator:
             "fs": {"healthy": True, "last_error": None, "observations": 0},
         }
 
-        # Event Processing & Output
-        self.processor = event_processor or EventProcessor()
+        # Resolve active database session from repository or processor
+        session = None
+        if event_repository is not None and (
+            hasattr(event_repository, "session")
+            or hasattr(event_repository, "_session")
+        ):
+            session = getattr(event_repository, "session", None) or getattr(
+                event_repository, "_session"
+            )
+        elif event_processor is not None and hasattr(event_processor, "resolver"):
+            session = getattr(event_processor.resolver, "_session", None)
+
+        self._session = session
+
+        # Event Processing & Output: production pipeline uses DatabaseIdentityResolver
+        # when an active database session is supplied.
+        if event_processor is not None:
+            self.processor = event_processor
+            self.resolver = getattr(event_processor, "resolver", None)
+        elif identity_resolver is not None:
+            self.resolver = identity_resolver
+            self.processor = EventProcessor(resolver=identity_resolver)
+        elif session is not None:
+            self.resolver = DatabaseIdentityResolver(session)
+            self.processor = EventProcessor(resolver=self.resolver)
+        else:
+            self.resolver = NoOpIdentityResolver()
+            self.processor = EventProcessor(resolver=self.resolver)
+
+        self.user_synchronizer = user_synchronizer or LinuxUserSynchronizer(
+            passwd_file=config.passwd_file,
+            user_provider=config.user_provider,
+        )
+        self.process_lifecycle_service = (
+            process_lifecycle_service or ProcessLifecycleService()
+        )
+
         self.repository = event_repository
         self.callback = event_callback
 
@@ -423,11 +476,41 @@ class CollectorOrchestrator:
                     self._collector_status["resource"]["healthy"] = False
                     self._collector_status["resource"]["last_error"] = msg
 
-            # 4. Authoritative Event Normalization
+            # 2. Synchronize user-account information for the monitored host
+            if self._session is not None and self.user_synchronizer is not None:
+                try:
+                    self.user_synchronizer.sync_users(
+                        self.host_uuid,
+                        self._session,
+                        resolver=self.resolver,
+                        now=now_wall,
+                    )
+                except Exception as exc:
+                    msg = f"User synchronization error: {exc}"
+                    logger.error(msg, exc_info=True)
+                    sink_errors["user_sync"] = msg
+
+            # 3. Apply process start/end lifecycle changes using the real observations
+            # 4. Lifecycle entity changes are flushed and resolver cache entries are invalidated
+            if self._session is not None and self.process_lifecycle_service is not None:
+                try:
+                    self.process_lifecycle_service.apply_observations(
+                        self._session,
+                        raw_observations,
+                        self.host_uuid,
+                        resolver=self.resolver,
+                        now=now_wall,
+                    )
+                except Exception as exc:
+                    msg = f"Process lifecycle error: {exc}"
+                    logger.error(msg, exc_info=True)
+                    sink_errors["process_lifecycle"] = msg
+
+            # 5. Authoritative Event Normalization & Identity Enrichment
             batch_result = self.processor.process_batch(raw_observations)
             normalized_events = batch_result.events
 
-            # 5. Optional Persistence & Callback Dispatch
+            # 6. Optional Persistence & Callback Dispatch
             if normalized_events:
                 if self.repository is not None:
                     try:

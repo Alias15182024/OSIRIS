@@ -31,6 +31,11 @@ class EventRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
 
+    @property
+    def session(self) -> Session:
+        """The active database session."""
+        return self._session
+
     def _to_orm(self, event: NormalizedEvent) -> Event:
         """Convert a ``NormalizedEvent`` to an ``Event`` ORM instance."""
         return Event(

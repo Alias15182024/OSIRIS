@@ -15,11 +15,19 @@ compose with this module.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from backend.services.events.schemas import NormalizedEvent
 
+if TYPE_CHECKING:
+    from backend.services.events.resolver import IdentityResolver
 
-def enrich(event: NormalizedEvent) -> NormalizedEvent:
-    """Apply deterministic enrichments to a normalized event.
+
+def enrich(
+    event: NormalizedEvent,
+    resolver: IdentityResolver | None = None,
+) -> NormalizedEvent:
+    """Apply deterministic and identity enrichments to a normalized event.
 
     Current enrichments
     -------------------
@@ -28,11 +36,16 @@ def enrich(event: NormalizedEvent) -> NormalizedEvent:
     3. **username** — leading/trailing whitespace stripped.
     4. **command** — if absent and present in ``payload["command"]``,
        copied to the top-level field.
+    5. **identity resolution** — if an ``IdentityResolver`` is supplied,
+       resolves UID to username and PID to internal process UUID.
 
     Parameters
     ----------
     event:
         A ``NormalizedEvent`` produced by the normalizer.
+    resolver:
+        Optional ``IdentityResolver`` instance. When omitted, deterministic
+        enrichments are applied without identity lookup.
 
     Returns
     -------
@@ -59,4 +72,10 @@ def enrich(event: NormalizedEvent) -> NormalizedEvent:
         if isinstance(cmd, str) and cmd.strip():
             updates["command"] = cmd.strip()
 
-    return event.model_copy(update=updates)
+    enriched = event.model_copy(update=updates)
+
+    # 5. Apply identity resolution if resolver provided
+    if resolver is not None:
+        enriched = resolver.resolve_event(enriched)
+
+    return enriched

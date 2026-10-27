@@ -185,14 +185,8 @@ class ProcessCollector(BaseCollector):
 
         observations = []
 
-        # 1. New processes -> process.start
-        for key in sorted(new_keys, key=lambda k: k[0]):
-            proc = current_map[key]
-            obs_dict = self.parse(proc)
-            obs_dict["observed_at"] = now
-            observations.append(RawObservation(**obs_dict))
-
-        # 2. Exited processes -> process.end (using preserved context)
+        # 1. Exited processes -> process.end (using preserved context)
+        # Emitted before new processes so terminating lifetimes precede reuse starts.
         for key in sorted(exited_keys, key=lambda k: k[0]):
             old_proc = self._known_processes[key]
             exit_obs = RawObservation(
@@ -217,6 +211,13 @@ class ProcessCollector(BaseCollector):
                 },
             )
             observations.append(exit_obs)
+
+        # 2. New processes -> process.start
+        for key in sorted(new_keys, key=lambda k: k[0]):
+            proc = current_map[key]
+            obs_dict = self.parse(proc)
+            obs_dict["observed_at"] = now
+            observations.append(RawObservation(**obs_dict))
 
         # Update known processes state for the next cycle
         self._known_processes = current_map

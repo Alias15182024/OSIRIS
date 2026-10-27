@@ -15,15 +15,22 @@ Pipeline per observation::
 The processor never silently discards malformed observations.  Every
 failure is reported in the result object with actionable error messages.
 """
-
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Any, Callable
+import uuid
+
+from sqlalchemy.orm import Session
 
 from backend.services.events.enricher import enrich
 from backend.services.events.normalizer import normalize_observation
+from backend.services.events.resolver import (
+    DatabaseIdentityResolver,
+    IdentityResolver,
+    NoOpIdentityResolver,
+)
 from backend.services.events.schemas import NormalizedEvent, RawObservation
 from backend.services.events.validator import validate_raw_observation
 
@@ -66,15 +73,41 @@ class EventProcessor:
     Transforms ``RawObservation`` instances into ``NormalizedEvent``
     instances through validation, normalization, and enrichment.
 
+    Parameters
+    ----------
+    resolver:
+        Optional ``IdentityResolver`` instance. Defaults to ``NoOpIdentityResolver``
+        for safe, database-free isolated testing.
+
     Usage::
 
+        # Pure unit testing (no-op resolver)
         processor = EventProcessor()
+
+        # Database-backed resolution
+        processor = EventProcessor.with_database(db_session)
         result = processor.process(raw_observation)
-        if result.success:
-            repository.save(result.event)
-        else:
-            log_errors(result.errors)
     """
+
+    def __init__(self, resolver: IdentityResolver | None = None) -> None:
+        self.resolver = resolver if resolver is not None else NoOpIdentityResolver()
+
+    @classmethod
+    def with_database(
+        cls,
+        session: Any,
+        *,
+        cache_ttl: float = 60.0,
+        clock: Any | None = None,
+    ) -> EventProcessor:
+        """Create an EventProcessor wired to a database-backed identity resolver."""
+        return cls(
+            resolver=DatabaseIdentityResolver(
+                session=session,
+                cache_ttl=cache_ttl,
+                clock=clock,
+            )
+        )
 
     def process(self, observation: RawObservation) -> ProcessingResult:
         """Process a single raw observation.
@@ -93,8 +126,8 @@ class EventProcessor:
         except (ValueError, TypeError) as exc:
             return ProcessingResult(errors=[str(exc)])
 
-        # Step 3: Enrich
-        enriched = enrich(normalized)
+        # Step 3: Enrich (including identity resolution)
+        enriched = enrich(normalized, resolver=self.resolver)
 
         return ProcessingResult(event=enriched)
 
