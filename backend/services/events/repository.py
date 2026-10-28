@@ -28,13 +28,22 @@ class EventRepository:
         committing or rolling back the transaction.
     """
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session | None = None) -> None:
         self._session = session
 
     @property
-    def session(self) -> Session:
+    def session(self) -> Session | None:
         """The active database session."""
         return self._session
+
+    @session.setter
+    def session(self, s: Session | None) -> None:
+        """Update or bind the active database session."""
+        self._session = s
+
+    def set_session(self, session: Session | None) -> None:
+        """Bind repository to an active database session."""
+        self._session = session
 
     def _to_orm(self, event: NormalizedEvent) -> Event:
         """Convert a ``NormalizedEvent`` to an ``Event`` ORM instance."""
@@ -70,7 +79,11 @@ class EventRepository:
         sqlalchemy.exc.IntegrityError
             If a database constraint is violated (e.g. FK to a
             non-existent host).
+        RuntimeError
+            If no active database session is bound.
         """
+        if self._session is None:
+            raise RuntimeError("EventRepository has no active database session")
         orm_event = self._to_orm(event)
         self._session.add(orm_event)
         self._session.flush()
@@ -85,7 +98,14 @@ class EventRepository:
         -------
         list[Event]
             The ORM ``Event`` instances after flushing.
+
+        Raises
+        ------
+        RuntimeError
+            If no active database session is bound.
         """
+        if self._session is None:
+            raise RuntimeError("EventRepository has no active database session")
         orm_events = [self._to_orm(e) for e in events]
         self._session.add_all(orm_events)
         self._session.flush()

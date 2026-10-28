@@ -95,7 +95,7 @@ class EventProcessor:
     @classmethod
     def with_database(
         cls,
-        session: Any,
+        session: Any | None = None,
         *,
         cache_ttl: float = 60.0,
         clock: Any | None = None,

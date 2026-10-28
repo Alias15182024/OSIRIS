@@ -213,7 +213,7 @@ class DatabaseIdentityResolver(IdentityResolver):
 
     def __init__(
         self,
-        session: Session,
+        session: Session | None = None,
         *,
         cache_ttl: float = 60.0,
         clock: Callable[[], float] | None = None,
@@ -233,6 +233,20 @@ class DatabaseIdentityResolver(IdentityResolver):
         self._user_cache_misses: int = 0
         self._process_cache_hits: int = 0
         self._process_cache_misses: int = 0
+
+    @property
+    def session(self) -> Session | None:
+        """The active database session."""
+        return self._session
+
+    @session.setter
+    def session(self, s: Session | None) -> None:
+        """Update or bind the active database session."""
+        self._session = s
+
+    def set_session(self, session: Session | None) -> None:
+        """Bind resolver to an active database session."""
+        self._session = session
 
     @property
     def user_cache_hits(self) -> int:
@@ -300,6 +314,9 @@ class DatabaseIdentityResolver(IdentityResolver):
                 del self._user_cache[key]
 
         self._user_cache_misses += 1
+
+        if self._session is None:
+            return None
 
         # Query database: host-scoped uid
         stmt = select(LinuxUser.username).where(
@@ -401,6 +418,9 @@ class DatabaseIdentityResolver(IdentityResolver):
             # If 0 matches in cache, fall through to query DB
 
         self._process_cache_misses += 1
+
+        if self._session is None:
+            return None
 
         # Query database with strict lifetime boundary conditions
         stmt = (

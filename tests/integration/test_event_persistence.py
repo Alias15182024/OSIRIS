@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock
 
 import pytest
 from sqlalchemy import create_engine, select, text
@@ -665,3 +666,439 @@ class TestPostgreSQLEventPersistence:
         assert proc.command == "/usr/sbin/init_daemon"
         assert _ensure_utc(proc.started_at) == t_init
         assert proc.ended_at is None
+
+    def test_pg_orchestrator_session_factory_atomicity_and_rollback(
+        self, pg_session: Session, pg_host: Host
+    ):
+        """Verify PostgreSQL transaction boundaries using session_factory:
+        Successful cycle commits entities and events atomically; failure rolls back all cycle changes."""
+        t0 = datetime(2026, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+        factory = lambda: Session(bind=pg_session.connection(), join_transaction_mode="create_savepoint")
+
+        # ── 1. Successful Cycle ──
+        config = OrchestratorConfig(
+            host_id=pg_host.id,
+            fs_backend=MockInotifyBackend(),
+            session_factory=factory,
+            user_provider=lambda: [(4901, "pg_tx_user_ok")],
+            wall_clock=lambda: t0,
+        )
+        orchestrator = CollectorOrchestrator(config)
+        assert orchestrator.is_session_owned is True
+
+        obs_ok = RawObservation(
+            source="proc",
+            host_id=pg_host.id,
+            event_type="process.start",
+            action="start",
+            severity="info",
+            observed_at=t0,
+            uid=4901,
+            pid=8901,
+            command="/usr/bin/pg_tx_worker",
+            object_type="process",
+        )
+        orchestrator.process_collector.collect_observations = lambda diff=True: [obs_ok]
+        orchestrator.resource_collector.collect_observations = lambda **kw: []
+        orchestrator.filesystem_collector.collect_observations = lambda: []
+
+        cycle_ok = orchestrator.run_cycle(force_all=True)
+        assert cycle_ok.success is True
+        assert len(cycle_ok.events) == 1
+        ev_id = cycle_ok.events[0].id
+        proc_id = cycle_ok.events[0].process_id
+
+        # Verify PostgreSQL database contains committed rows
+        with factory() as verify_s:
+            user = verify_s.execute(
+                select(LinuxUser).where(LinuxUser.host_id == pg_host.id, LinuxUser.uid == 4901)
+            ).scalar_one_or_none()
+            assert user is not None
+            assert user.username == "pg_tx_user_ok"
+
+            proc = verify_s.get(Process, proc_id)
+            assert proc is not None
+            assert proc.pid == 8901
+
+            ev = verify_s.get(Event, ev_id)
+            assert ev is not None
+            assert ev.username == "pg_tx_user_ok"
+            assert ev.process_id == proc_id
+
+        # ── 2. Failed Cycle (processing error) ──
+        t1 = t0 + timedelta(minutes=5)
+        config_fail = OrchestratorConfig(
+            host_id=pg_host.id,
+            fs_backend=MockInotifyBackend(),
+            session_factory=factory,
+            user_provider=lambda: [(4902, "pg_tx_user_fail")],
+            wall_clock=lambda: t1,
+        )
+        orchestrator_fail = CollectorOrchestrator(config_fail)
+
+        obs_valid = RawObservation(
+            source="proc",
+            host_id=pg_host.id,
+            event_type="process.start",
+            action="start",
+            severity="info",
+            observed_at=t1,
+            uid=4902,
+            pid=8902,
+            command="/usr/bin/pg_tx_fail",
+            object_type="process",
+        )
+        obs_invalid = RawObservation(
+            source="proc",
+            host_id=pg_host.id,
+            event_type="process.start",
+            action="start",
+            severity="INVALID_SEVERITY_PG",
+            observed_at=t1,
+        )
+        orchestrator_fail.process_collector.collect_observations = lambda diff=True: [obs_valid, obs_invalid]
+        orchestrator_fail.resource_collector.collect_observations = lambda **kw: []
+        orchestrator_fail.filesystem_collector.collect_observations = lambda: []
+
+        cycle_fail = orchestrator_fail.run_cycle(force_all=True)
+        assert cycle_fail.success is False
+
+        # Verify rollback in PostgreSQL
+        with factory() as verify_s:
+            user_rolled = verify_s.execute(
+                select(LinuxUser).where(LinuxUser.host_id == pg_host.id, LinuxUser.uid == 4902)
+            ).scalar_one_or_none()
+            assert user_rolled is None, "Failed cycle user must be rolled back from PostgreSQL"
+
+            proc_rolled = verify_s.execute(
+                select(Process).where(Process.host_id == pg_host.id, Process.pid == 8902)
+            ).scalar_one_or_none()
+            assert proc_rolled is None, "Failed cycle process must be rolled back from PostgreSQL"
+
+    def test_pg_orchestrator_rollback_preserves_previous_cycle(
+        self, pg_session: Session, pg_host: Host
+    ):
+        """Verify that a rollback in cycle 2 does not erase data committed in cycle 1 on PostgreSQL."""
+        t0 = datetime(2026, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+        factory = lambda: Session(bind=pg_session.connection(), join_transaction_mode="create_savepoint")
+
+        config = OrchestratorConfig(
+            host_id=pg_host.id,
+            fs_backend=MockInotifyBackend(),
+            session_factory=factory,
+            user_provider=lambda: [(4910, "pg_preserved_user")],
+            wall_clock=lambda: t0,
+        )
+        orchestrator = CollectorOrchestrator(config)
+
+        # Cycle 1
+        obs1 = RawObservation(
+            source="proc",
+            host_id=pg_host.id,
+            event_type="process.start",
+            action="start",
+            severity="info",
+            observed_at=t0,
+            uid=4910,
+            pid=8910,
+            command="/usr/bin/pg_preserved_app",
+            object_type="process",
+        )
+        orchestrator.process_collector.collect_observations = lambda diff=True: [obs1]
+        orchestrator.resource_collector.collect_observations = lambda **kw: []
+        orchestrator.filesystem_collector.collect_observations = lambda: []
+
+        res1 = orchestrator.run_cycle(force_all=True)
+        assert res1.success is True
+
+        # Cycle 2 fails during event persistence
+        broken_repo = EventRepository(session=None)
+        broken_repo.save_batch = MagicMock(side_effect=RuntimeError("PG Persistence Failure"))
+
+        orchestrator_c2 = CollectorOrchestrator(
+            config,
+            event_repository=broken_repo,
+        )
+        obs2 = RawObservation(
+            source="proc",
+            host_id=pg_host.id,
+            event_type="process.start",
+            action="start",
+            severity="info",
+            observed_at=t0 + timedelta(minutes=10),
+            uid=4910,
+            pid=8911,
+            command="/usr/bin/pg_fail_app",
+            object_type="process",
+        )
+        orchestrator_c2.process_collector.collect_observations = lambda diff=True: [obs2]
+        orchestrator_c2.resource_collector.collect_observations = lambda **kw: []
+        orchestrator_c2.filesystem_collector.collect_observations = lambda: []
+
+        res2 = orchestrator_c2.run_cycle(force_all=True)
+        assert res2.success is False
+
+        # Verify Cycle 1 data is still intact in PostgreSQL
+        with factory() as verify_s:
+            u = verify_s.execute(
+                select(LinuxUser).where(LinuxUser.host_id == pg_host.id, LinuxUser.uid == 4910)
+            ).scalar_one_or_none()
+            assert u is not None
+            assert u.username == "pg_preserved_user"
+
+            p1 = verify_s.execute(
+                select(Process).where(Process.host_id == pg_host.id, Process.pid == 8910)
+            ).scalar_one_or_none()
+            assert p1 is not None
+
+            # Cycle 2 process must NOT exist
+            p2 = verify_s.execute(
+                select(Process).where(Process.host_id == pg_host.id, Process.pid == 8911)
+            ).scalar_one_or_none()
+            assert p2 is None
+
+    def test_pg_orchestrator_external_session_savepoint_rollback(
+        self, pg_session: Session, pg_host: Host
+    ):
+        """Verify that on PostgreSQL, an external session's outer transaction survives an inner cycle failure."""
+        t0 = datetime(2026, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+
+        # Outer caller adds an entity before the collection cycle
+        outer_user = LinuxUser(
+            id=uuid.uuid4(),
+            host_id=pg_host.id,
+            uid=7150,
+            username="pg_outer_user",
+            first_seen_at=t0,
+        )
+        pg_session.add(outer_user)
+        pg_session.flush()
+
+        config = OrchestratorConfig(
+            host_id=pg_host.id,
+            user_provider=lambda: [(7151, "pg_inner_user")],
+            wall_clock=lambda: t0,
+            fs_backend=MockInotifyBackend(),
+        )
+        orchestrator = CollectorOrchestrator(config, session=pg_session)
+
+        # Trigger a real Postgres foreign key failure during repository.save_batch
+        broken_obs = RawObservation(
+            source="proc",
+            host_id=pg_host.id,
+            event_type="process.start",
+            action="start",
+            severity="info",
+            observed_at=t0,
+            uid=7151,
+            pid=9992,
+            command="/bin/pg_broken_app",
+        )
+        orchestrator.process_collector.collect_observations = lambda diff=True: [broken_obs]
+        orchestrator.resource_collector.collect_observations = lambda **kw: []
+        orchestrator.filesystem_collector.collect_observations = lambda: []
+
+        # Inject invalid foreign key into event batch to trigger PostgreSQL FK error
+        orig_process_batch = orchestrator.processor.process_batch
+
+        def bad_batch(obs):
+            res = orig_process_batch(obs)
+            if res.events:
+                res.events[0] = res.events[0].model_copy(
+                    update={"process_id": uuid.uuid4()}
+                )
+            return res
+
+        orchestrator.processor.process_batch = bad_batch
+
+        res = orchestrator.run_cycle(force_all=True)
+        assert res.success is False
+        assert "repository" in res.sink_errors
+
+        # The savepoint rollback must prevent InFailedSqlTransaction (25P02) on PostgreSQL!
+        # The outer user must still be accessible and queryable
+        ou = pg_session.execute(
+            select(LinuxUser).where(LinuxUser.id == outer_user.id)
+        ).scalar_one_or_none()
+        assert ou is not None
+        assert ou.username == "pg_outer_user"
+
+        # The failed cycle user must have been rolled back
+        iu = pg_session.execute(
+            select(LinuxUser).where(
+                LinuxUser.host_id == pg_host.id, LinuxUser.uid == 7151
+            )
+        ).scalar_one_or_none()
+        assert iu is None, "Failed cycle user must be rolled back on PostgreSQL"
+
+    def test_pg_orchestrator_collector_error_isolation_persists_valid_events(
+        self, pg_session: Session, pg_host: Host
+    ):
+        """On PostgreSQL: collector error alone does not roll back valid database writes from healthy collectors."""
+        t0 = datetime(2026, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+        factory = lambda: Session(bind=pg_session.connection(), join_transaction_mode="create_savepoint")
+
+        config = OrchestratorConfig(
+            host_id=pg_host.id,
+            fs_backend=MockInotifyBackend(),
+            session_factory=factory,
+            user_provider=lambda: [(4920, "pg_survivor_user")],
+            wall_clock=lambda: t0,
+        )
+        orchestrator = CollectorOrchestrator(config)
+
+        # Filesystem collector raises an error
+        orchestrator.filesystem_collector.collect_observations = MagicMock(
+            side_effect=RuntimeError("PG simulated inotify crash")
+        )
+        # Process collector produces a valid observation
+        proc_obs = RawObservation(
+            source="proc",
+            host_id=pg_host.id,
+            event_type="process.start",
+            action="start",
+            severity="info",
+            observed_at=t0,
+            uid=4920,
+            pid=8920,
+            command="/usr/bin/pg_survivor_app",
+            object_type="process",
+        )
+        orchestrator.process_collector.collect_observations = lambda diff=True: [proc_obs]
+        orchestrator.resource_collector.collect_observations = lambda **kw: []
+
+        delivered = []
+        orchestrator.callback = lambda evs: delivered.extend(evs)
+
+        res = orchestrator.run_cycle(force_all=True)
+
+        assert res.success is False
+        assert "fs" in res.collector_errors
+        assert not res.sink_errors
+        assert len(res.events) == 1
+        assert len(delivered) == 1
+        assert orchestrator.get_status()["total_events"] == 1
+
+        # Verify PostgreSQL database contains the committed rows
+        with factory() as verify_s:
+            user = verify_s.execute(
+                select(LinuxUser).where(LinuxUser.host_id == pg_host.id, LinuxUser.uid == 4920)
+            ).scalar_one_or_none()
+            assert user is not None
+            assert user.username == "pg_survivor_user"
+
+            proc = verify_s.execute(
+                select(Process).where(Process.host_id == pg_host.id, Process.pid == 8920)
+            ).scalar_one_or_none()
+            assert proc is not None
+            assert proc.command == "/usr/bin/pg_survivor_app"
+
+    def test_pg_orchestrator_callback_failure_preserves_committed_records(
+        self, pg_session: Session, pg_host: Host
+    ):
+        """On PostgreSQL: callback failure after successful commit preserves committed records in the database."""
+        t0 = datetime(2026, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+        factory = lambda: Session(bind=pg_session.connection(), join_transaction_mode="create_savepoint")
+
+        def bad_callback(evs):
+            raise RuntimeError("Postgres webhook connection dropped")
+
+        config = OrchestratorConfig(
+            host_id=pg_host.id,
+            fs_backend=MockInotifyBackend(),
+            session_factory=factory,
+            user_provider=lambda: [(4925, "pg_callback_user")],
+            wall_clock=lambda: t0,
+        )
+        orchestrator = CollectorOrchestrator(config, event_callback=bad_callback)
+
+        proc_obs = RawObservation(
+            source="proc",
+            host_id=pg_host.id,
+            event_type="process.start",
+            action="start",
+            severity="info",
+            observed_at=t0,
+            uid=4925,
+            pid=8925,
+            command="/usr/bin/pg_callback_app",
+            object_type="process",
+        )
+        orchestrator.process_collector.collect_observations = lambda diff=True: [proc_obs]
+        orchestrator.resource_collector.collect_observations = lambda **kw: []
+        orchestrator.filesystem_collector.collect_observations = lambda: []
+
+        res = orchestrator.run_cycle(force_all=True)
+
+        assert res.success is False
+        assert "callback" in res.sink_errors
+        assert "Postgres webhook connection dropped" in res.sink_errors["callback"]
+        assert len(res.events) == 1
+        assert orchestrator.get_status()["total_events"] == 1
+
+        # Verify PostgreSQL database still has the committed rows
+        with factory() as verify_s:
+            user = verify_s.execute(
+                select(LinuxUser).where(LinuxUser.host_id == pg_host.id, LinuxUser.uid == 4925)
+            ).scalar_one_or_none()
+            assert user is not None
+            assert user.username == "pg_callback_user"
+
+            proc = verify_s.execute(
+                select(Process).where(Process.host_id == pg_host.id, Process.pid == 8925)
+            ).scalar_one_or_none()
+            assert proc is not None
+
+    def test_pg_orchestrator_entity_flush_error_does_not_pollute_transaction(
+        self, pg_session: Session, pg_host: Host
+    ):
+        """On PostgreSQL: entity flush failure does not query the aborted session and rolls back savepoint cleanly."""
+        t0 = datetime(2026, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+        factory = lambda: Session(bind=pg_session.connection(), join_transaction_mode="create_savepoint")
+
+        # Mock user synchronizer to trigger a flush error
+        mock_sync = MagicMock()
+        mock_sync.sync_users.side_effect = IntegrityError(
+            "INSERT INTO linux_users", {}, Exception("PG simulated user flush error")
+        )
+
+        config = OrchestratorConfig(
+            host_id=pg_host.id,
+            fs_backend=MockInotifyBackend(),
+            session_factory=factory,
+            wall_clock=lambda: t0,
+        )
+        orchestrator = CollectorOrchestrator(config, user_synchronizer=mock_sync)
+
+        proc_obs = RawObservation(
+            source="proc",
+            host_id=pg_host.id,
+            event_type="process.start",
+            action="start",
+            severity="info",
+            observed_at=t0,
+            uid=4930,
+            pid=8930,
+            command="/usr/bin/pg_flush_fail_app",
+            object_type="process",
+        )
+        orchestrator.process_collector.collect_observations = lambda diff=True: [proc_obs]
+        orchestrator.resource_collector.collect_observations = lambda **kw: []
+        orchestrator.filesystem_collector.collect_observations = lambda: []
+
+        orchestrator.process_lifecycle_service.apply_observations = MagicMock()
+
+        res = orchestrator.run_cycle(force_all=True)
+
+        assert res.success is False
+        assert "user_sync" in res.sink_errors
+        # Must not query aborted PG transaction
+        assert orchestrator.process_lifecycle_service.apply_observations.call_count == 0
+        assert orchestrator.session is None
+
+        # Verify savepoint rolled back cleanly on PostgreSQL without InFailedSqlTransaction
+        with factory() as verify_s:
+            p = verify_s.execute(
+                select(Process).where(Process.host_id == pg_host.id, Process.pid == 8930)
+            ).scalar_one_or_none()
+            assert p is None
