@@ -528,3 +528,121 @@ The `EventRepository` maps `NormalizedEvent` to the SQLAlchemy `Event` ORM model
 - Supports single-event and batch persistence without partial silent writes
 - Rolls back atomically on error
 
+---
+
+## 12. Standalone Collector Runner Daemon
+
+The standalone collector runner (`collectors/runner.py`) provides a dedicated entry point for running OSIRIS Linux system collectors independently of the FastAPI web application. This decouples collector execution from web server lifecycles, enabling the collector to run as an unprivileged or systemd-managed background service.
+
+### 12.1 CLI Syntax & Usage
+
+```bash
+python -m collectors.runner [--once] [--cycles N] [--interval SECONDS] [--watch] [--host-id ID] [--proc-dir PATH] [--passwd-file PATH] [--watch-path PATH]
+```
+
+### 12.2 Command-Line Options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `--once` | Flag | `false` | Run exactly one collection cycle and exit. Implies `--cycles 1`. |
+| `--cycles N` | Integer | `None` | Run a bounded number of collection cycles ($N \ge 1$) and exit. |
+| `--interval SECONDS` | Float | `2.0` | Delay between collection cycles in seconds (must be $> 0$). |
+| `--watch` | Flag | `false` | Run continuously until interrupted by `SIGINT` or `SIGTERM`. Default when neither `--once` nor `--cycles` is specified. |
+| `--host-id ID` | String | `$OSIRIS_HOST_ID` | Monitored host UUID or identifier string. Non-UUID strings (e.g. `osiris-dev-host`) are deterministically resolved via UUIDv5 DNS namespace. |
+| `--proc-dir PATH` | Path | `/proc` | Proc filesystem mount path override (useful for containerized or custom environments). |
+| `--passwd-file PATH` | Path | `/etc/passwd` | Linux passwd file path override for user account synchronization. |
+| `--watch-path PATH` | Path | `[]` | Repeatable path to register for filesystem monitoring via inotify. |
+
+#### Mutual Exclusivity and Validation Rules
+
+- `--cycles` must be an integer $\ge 1$; non-positive integers cause termination with exit code `2`.
+- `--interval` must be a positive number ($> 0$); values $\le 0$ cause termination with exit code `2`.
+- `--once` and `--watch` are mutually exclusive; passing both terminates with exit code `2`.
+- `--cycles` and `--watch` are mutually exclusive; passing both terminates with exit code `2`.
+- If `--once` and `--cycles` are passed together, `--cycles` must be `1`; any other value terminates with exit code `2`.
+- If none of `--once`, `--cycles`, or `--watch` is specified, continuous `--watch` mode is enabled by default.
+
+### 12.3 Process Exit Codes
+
+| Exit Code | Meaning |
+|---|---|
+| `0` | Clean exit after completing bounded cycles (`--once` or `--cycles N`) or graceful signal shutdown (`SIGINT`, `SIGTERM`). |
+| `1` | Unrecoverable runtime error or collector startup failure (e.g., watch descriptor exhaustion, fatal hardware exception). |
+| `2` | Configuration or CLI argument validation error (e.g., invalid cycle bounds, conflicting execution flags). |
+
+### 12.4 Environment Prerequisites
+
+The collector runner requires the following environment variables (configured via environment or `.env` file):
+
+| Variable | Required | Description | Example (Zero Real Secrets) |
+|---|---|---|---|
+| `OSIRIS_DATABASE_URL` | Yes | SQLAlchemy PostgreSQL connection URI | `postgresql://osiris_user:example_password@127.0.0.1:5432/osiris_db` |
+| `OSIRIS_HOST_ID` | No | Monitored host UUID or identifier string (default: `osiris-dev-host`) | `osiris-prod-node-01` |
+| `OSIRIS_DEBUG` | No | Enable debug SQL echo logging (default: `false`) | `false` |
+
+> **Security Note:** Never log or commit real credentials. Database passwords and secret keys must be managed via secure environment variables or vault mechanisms.
+
+### 12.5 Systemd Service Unit File Template
+
+Place the following unit file at `/etc/systemd/system/osiris-collector.service`:
+
+```ini
+[Unit]
+Description=OSIRIS Standalone Linux System Collector Daemon
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=osiris
+Group=osiris
+WorkingDirectory=/opt/osiris
+EnvironmentFile=/etc/osiris/collector.env
+ExecStart=/opt/osiris/.venv/bin/python -m collectors.runner --watch --interval 2.0 --watch-path /etc --watch-path /var/log
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=15s
+KillMode=mixed
+KillSignal=SIGTERM
+
+# Sandboxing and capabilities
+# Least-privilege capability set:
+# - CAP_DAC_READ_SEARCH: Retained to allow the unprivileged 'osiris' service user to traverse
+#   and install inotify watches on root-restricted subdirectories (e.g. /etc/sudoers.d,
+#   /var/log/audit) without running as root. This capability grants read and directory search
+#   privileges only; it does not grant write or file modification rights (CAP_DAC_OVERRIDE).
+# - CAP_SYS_PTRACE: Removed. The process collector reads standard procfs pseudo-files
+#   (/proc/<pid>/stat, /proc/<pid>/cmdline) which are world-readable (0444). The collector
+#   never attaches to processes with ptrace(2). On hardened kernels using hidepid=2, access
+#   should be granted via group membership (e.g., SupplementaryGroups=proc) rather than
+#   granting CAP_SYS_PTRACE, which would allow arbitrary process memory inspection.
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+AmbientCapabilities=CAP_DAC_READ_SEARCH
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/log/osiris
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
+```
+
+#### Security & Least-Privilege Capability Analysis
+
+1. **`CAP_SYS_PTRACE` (Omitted):**
+   - *Audit finding:* Unnecessary for OSIRIS collectors. `ProcessCollector` reads `/proc/<pid>/stat`, `/proc/<pid>/cmdline`, and `/proc/<pid>/status` via standard VFS read operations. It does not invoke `ptrace(2)` or `process_vm_readv(2)`.
+   - *Hardened Kernels (`hidepid=2`):* Under procfs mount option `hidepid=2`, non-root processes cannot see `/proc/<pid>` directories of other users unless they belong to the configured proc GID. The secure remedy is adding `SupplementaryGroups=<gid>` to the systemd service, rather than granting `CAP_SYS_PTRACE` (which would allow arbitrary process memory inspection and code injection).
+
+2. **`CAP_DAC_READ_SEARCH` (Retained):**
+   - *Audit finding:* Required when recursively monitoring administrative directories such as `/etc` and `/var/log`. Specific subdirectories (e.g., `/etc/sudoers.d/`, `/var/log/audit/`) are typically mode `0700` or `0750` owned by `root:root`. Without `CAP_DAC_READ_SEARCH`, an unprivileged daemon will fail with `PermissionError` (EACCES) when traversing directories to install inotify watch descriptors.
+   - *Privilege Implications:* Bypasses read permission checks and directory search (execute) permission checks. It does **not** bypass write permission checks (`CAP_DAC_OVERRIDE` remains ungranted), preventing the collector from tampering with monitored files. Reading of sensitive configuration is bounded by filesystem permissions, and the daemon runs with `ProtectSystem=strict` and `NoNewPrivileges=true`.
+
+To enable and start the service:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable osiris-collector.service
+sudo systemctl start osiris-collector.service
+sudo systemctl status osiris-collector.service
+```

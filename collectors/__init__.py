@@ -16,6 +16,7 @@ from collectors.orchestrator import (
     OrchestratorConfig,
     OrchestratorError,
     OrchestratorState,
+    resolve_host_uuid,
 )
 from collectors.process.collector import ProcessCollector
 from collectors.resource.collector import ResourceCollector
@@ -31,4 +32,5 @@ __all__ = [
     "OrchestratorState",
     "ProcessCollector",
     "ResourceCollector",
+    "resolve_host_uuid",
 ]

@@ -37,11 +37,26 @@ from backend.services.events.schemas import NormalizedEvent
 logger = logging.getLogger("osiris.services.events.resolver")
 
 
-def _ensure_uuid(val: uuid.UUID | str) -> uuid.UUID:
-    """Coerce a UUID or string into a uuid.UUID instance."""
-    if isinstance(val, uuid.UUID):
-        return val
-    return uuid.UUID(str(val))
+def resolve_host_uuid(host_id: uuid.UUID | str) -> uuid.UUID:
+    """Resolve a host identifier to a canonical deterministic UUID.
+
+    - If host_id is already a uuid.UUID instance, returns it directly.
+    - If host_id is a valid UUID string (hexadecimal with or without hyphens),
+      normalizes (whitespace-stripped) and returns the parsed uuid.UUID.
+    - If host_id is a non-UUID hostname/string (e.g. 'osiris-dev-host'), derives
+      a deterministic UUIDv5 using uuid.uuid5(uuid.NAMESPACE_DNS, host_str).
+    """
+    if isinstance(host_id, uuid.UUID):
+        return host_id
+    host_str = str(host_id).strip()
+    try:
+        return uuid.UUID(host_str)
+    except (ValueError, AttributeError, TypeError):
+        return uuid.uuid5(uuid.NAMESPACE_DNS, host_str)
+
+
+# Canonical alias for internal identity resolution routines
+_ensure_uuid = resolve_host_uuid
 
 
 def _ensure_utc(dt: datetime | None) -> datetime | None:

@@ -27,18 +27,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.db.models.linux_user import LinuxUser
+from backend.services.events.resolver import _ensure_uuid, resolve_host_uuid
 
 if TYPE_CHECKING:
     from backend.services.events.resolver import IdentityResolver
 
 logger = logging.getLogger("osiris.services.events.user_sync")
-
-
-def _ensure_uuid(val: uuid.UUID | str) -> uuid.UUID:
-    """Coerce a UUID or string into a uuid.UUID instance."""
-    if isinstance(val, uuid.UUID):
-        return val
-    return uuid.UUID(str(val))
 
 
 def _ensure_utc(dt: datetime | None) -> datetime:

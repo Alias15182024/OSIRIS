@@ -1297,3 +1297,82 @@ class TestNoOpResolverBehavior:
         assert res.event.username == "preset_student"
         assert res.event.process_id == FIXTURE_PROCESS_ID
         assert res.event.pid == 5555
+
+
+# ── 15. Canonical Host Identity Resolution ────────────────────────────
+
+
+class TestCanonicalHostIdentityResolution:
+    """Canonical host identity normalization and cross-layer equivalence."""
+
+    def test_canonical_resolution_across_layers(self):
+        """Confirm identical normalization and UUID generation across all service boundaries."""
+        from backend.services.events.process_lifecycle import _ensure_uuid as proc_ensure_uuid
+        from backend.services.events.resolver import (
+            _ensure_uuid as res_ensure_uuid,
+            resolve_host_uuid as res_resolve_uuid,
+        )
+        from backend.services.events.user_sync import _ensure_uuid as user_ensure_uuid
+        from collectors.orchestrator import resolve_host_uuid as orch_resolve_uuid
+
+        raw_uuid = uuid.uuid4()
+        uuid_str = str(raw_uuid)
+        uuid_str_unhyphenated = uuid_str.replace("-", "")
+        uuid_str_spaced = f"  {uuid_str}  "
+        hostname = "osiris-production-worker-01"
+        hostname_spaced = f"  {hostname}  "
+
+        # UUID instances retain exact identity
+        for fn in (res_resolve_uuid, res_ensure_uuid, user_ensure_uuid, proc_ensure_uuid, orch_resolve_uuid):
+            assert fn(raw_uuid) is raw_uuid
+
+        # Formatted UUID strings parse to the exact same UUID
+        for fn in (res_resolve_uuid, res_ensure_uuid, user_ensure_uuid, proc_ensure_uuid, orch_resolve_uuid):
+            assert fn(uuid_str) == raw_uuid
+            assert fn(uuid_str_unhyphenated) == raw_uuid
+            assert fn(uuid_str_spaced) == raw_uuid
+
+        # Hostname strings derive identical deterministic UUIDv5 (DNS namespace)
+        expected_dns_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, hostname)
+        for fn in (res_resolve_uuid, res_ensure_uuid, user_ensure_uuid, proc_ensure_uuid, orch_resolve_uuid):
+            assert fn(hostname) == expected_dns_uuid
+            assert fn(hostname_spaced) == expected_dns_uuid
+            assert fn(hostname).version == 5
+
+    def test_services_accept_hostname_strings(self, db_session: Session):
+        """Confirm services initialize and operate with hostname strings without ValueError."""
+        from backend.db.models.host import Host
+        from backend.services.events.process_lifecycle import ProcessLifecycleService
+        from backend.services.events.user_sync import LinuxUserSynchronizer
+
+        hostname = "osiris-edge-node"
+        expected_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, hostname)
+
+        host = Host(
+            id=expected_uuid,
+            hostname=hostname,
+            os_info="Ubuntu 22.04 LTS",
+            ip_address="192.168.1.50",
+            created_at=datetime.now(timezone.utc),
+        )
+        db_session.add(host)
+        db_session.flush()
+
+        resolver = DatabaseIdentityResolver(db_session)
+        # Calling resolve_user with a hostname string normalizes it to expected_uuid
+        assert resolver.resolve_user(hostname, 9999) is None
+        resolver.invalidate_user(hostname, 9999)
+        resolver.invalidate_process(hostname, 1234)
+
+        user_sync = LinuxUserSynchronizer(user_provider=lambda: [(1000, "edgetest")])
+        synced = user_sync.sync_users(host_id=hostname, session=db_session)
+        assert len(synced) == 1
+        assert synced[0].host_id == expected_uuid
+
+        proc_service = ProcessLifecycleService()
+        # Ensure ProcessLifecycleService handles hostname string cleanly
+        proc_service.apply_observations(
+            session=db_session,
+            observations=[],
+            host_id=hostname,
+        )

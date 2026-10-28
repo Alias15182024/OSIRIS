@@ -76,6 +76,7 @@ from backend.services.events.resolver import (
     DatabaseIdentityResolver,
     IdentityResolver,
     NoOpIdentityResolver,
+    resolve_host_uuid,
 )
 from backend.services.events.schemas import NormalizedEvent, RawObservation
 from backend.services.events.user_sync import LinuxUserSynchronizer
@@ -224,11 +225,7 @@ class CollectorOrchestrator:
         session: Session | None = None,
     ) -> None:
         self.config = config
-        self.host_uuid = (
-            config.host_id
-            if isinstance(config.host_id, uuid.UUID)
-            else uuid.UUID(str(config.host_id))
-        )
+        self.host_uuid = resolve_host_uuid(config.host_id)
 
         # Injectable clocks
         self._monotonic_clock = config.monotonic_clock
