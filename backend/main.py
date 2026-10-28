@@ -1,8 +1,10 @@
 """OSIRIS FastAPI application entry point."""
 
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any, AsyncGenerator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -13,6 +15,7 @@ from backend.api.routes.files import router as files_router
 from backend.api.routes.processes import router as processes_router
 from backend.api.routes.resources import router as resources_router
 from backend.api.routes.status import router as status_router
+from backend.config import settings
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = BASE_DIR / "frontend"
@@ -20,11 +23,35 @@ STATIC_DIR = FRONTEND_DIR / "static"
 TEMPLATES_DIR = FRONTEND_DIR / "templates"
 INDEX_HTML_PATH = TEMPLATES_DIR / "index.html"
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Lifespan context manager enforcing startup validation before serving traffic."""
+    settings.validate_secret_key()
+    yield
+
+
 app = FastAPI(
     title="OSIRIS",
     description="Operating System Incident Reconstruction and Intelligence System",
     version="0.1.0",
+    lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def enforce_secret_key_middleware(
+    request: Request, call_next: Any
+) -> Response:
+    """Fail fast before serving any HTTP traffic if secret key is invalid.
+
+    Guarantees that even if ASGI lifespan lifecycle events were bypassed
+    (e.g., uvicorn --lifespan off or raw ASGI adapters), no HTTP traffic
+    can be served in misconfigured production mode.
+    """
+    settings.validate_secret_key()
+    return await call_next(request)
+
 
 app.add_middleware(
     CORSMiddleware,

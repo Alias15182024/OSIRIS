@@ -168,7 +168,11 @@ def create_access_token(
     str
         URL-safe signed token string: ``header.payload.signature``.
     """
-    key = secret_key if secret_key is not None else settings.secret_key
+    if secret_key is not None:
+        key = secret_key
+    else:
+        settings.validate_secret_key()
+        key = settings.secret_key
     if not key:
         raise ValueError("Secret key cannot be empty")
 
@@ -240,7 +244,11 @@ def decode_access_token(
 
     header_b64, payload_b64, sig_b64 = parts
 
-    key = secret_key if secret_key is not None else settings.secret_key
+    if secret_key is not None:
+        key = secret_key
+    else:
+        settings.validate_secret_key()
+        key = settings.secret_key
     if not key:
         raise TokenInvalidError("Secret key cannot be empty")
 
