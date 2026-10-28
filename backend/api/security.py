@@ -364,13 +364,19 @@ def record_audit_log(
         else:
             raise TypeError(f"target_id must be UUID or str, got {type(target_id)}")
 
+    resolved_ip: str | None = None
+    if ip_address is not None:
+        cleaned_ip = ip_address.strip()
+        if cleaned_ip:
+            resolved_ip = cleaned_ip[:45]
+
     entry = AppAuditLog(
         user_id=resolved_user_id,
         action=action,
         target_type=target_type,
         target_id=resolved_target_id,
         details=details,
-        ip_address=ip_address,
+        ip_address=resolved_ip,
     )
     session.add(entry)
     session.flush()
