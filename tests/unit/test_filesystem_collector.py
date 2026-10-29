@@ -6,6 +6,7 @@ to provide deterministic, synthetic inotify events.
 
 from __future__ import annotations
 
+import os
 import sys
 import uuid
 from pathlib import Path
@@ -116,7 +117,7 @@ class TestParserFunctions:
 
         # Once the symlink is deleted before inspection, it cannot be identified from mask
         symlink_to_file.unlink()
-        assert not symlink_to_file.exists(follow_symlinks=False)
+        assert not os.path.lexists(symlink_to_file)
         assert determine_object_type(IN_DELETE, symlink_to_file) == "file"
         assert determine_object_type(0, symlink_to_file) == "file"
 
@@ -130,8 +131,35 @@ class TestParserFunctions:
 
         # Once deleted, inotify emits IN_DELETE without IN_ISDIR for unlinking a symlink
         symlink_to_dir.unlink()
-        assert not symlink_to_dir.exists(follow_symlinks=False)
+        assert not os.path.lexists(symlink_to_dir)
         assert determine_object_type(IN_DELETE, symlink_to_dir) == "file"
+
+    def test_determine_object_type_python_311_compatibility(self, tmp_path: Path):
+        """Regression test: verify symlink detection and fallback work across Python 3.11+.
+
+        Python 3.11 does not support `follow_symlinks` on `Path.exists()`.
+        Ensure object type determination and inode lookup function properly
+        without invoking Python 3.12+ Path.exists(follow_symlinks=...) APIs.
+        """
+        target = tmp_path / "compat_target.txt"
+        target.write_text("compat")
+        symlink = tmp_path / "compat_symlink"
+        symlink.symlink_to(target)
+
+        # Existing symlink resolves to symlink
+        assert determine_object_type(0, symlink) == "symlink"
+        assert get_inode(symlink) is not None
+
+        # Broken symlink (target removed, symlink remains)
+        target.unlink()
+        assert os.path.lexists(symlink)
+        assert determine_object_type(0, symlink) == "symlink"
+
+        # Deleted symlink (symlink itself unlinked)
+        symlink.unlink()
+        assert not os.path.lexists(symlink)
+        assert determine_object_type(0, symlink) == "file"
+        assert get_inode(symlink) is None
 
     def test_determine_object_type_inaccessible_path(self, tmp_path: Path):
         """Inaccessible paths (PermissionError/OSError) fall back safely to mask or file."""
