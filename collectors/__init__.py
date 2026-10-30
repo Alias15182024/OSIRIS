@@ -20,6 +20,7 @@ from collectors.orchestrator import (
 )
 from collectors.process.collector import ProcessCollector
 from collectors.resource.collector import ResourceCollector
+from collectors.syslog.collector import SyslogCollector
 
 __all__ = [
     "BaseCollector",
@@ -32,5 +33,6 @@ __all__ = [
     "OrchestratorState",
     "ProcessCollector",
     "ResourceCollector",
+    "SyslogCollector",
     "resolve_host_uuid",
 ]

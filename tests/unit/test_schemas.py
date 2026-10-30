@@ -29,15 +29,20 @@ from backend.api.schemas import (
     PaginatedFileResponse,
     PaginatedProcessResponse,
     PaginatedResourceSnapshotResponse,
+    PaginatedSessionResponse,
     PaginatedSnapshotResponse,
     PaginatedTimelineResponse,
     ProcessContext,
     ProcessQueryParams,
     ProcessResponse,
+    ProcessSummary,
     ResourceContext,
     ResourceSnapshotQueryParams,
     ResourceSnapshotResponse,
     SessionContext,
+    SessionDetailResponse,
+    SessionQueryParams,
+    SessionResponse,
     SnapshotContext,
     SnapshotQueryParams,
     SnapshotResponse,
@@ -894,6 +899,96 @@ class TestTimelineSchemas:
 
     def test_paginated_timeline_response_valid(self) -> None:
         paginated = PaginatedTimelineResponse(
+            total=0,
+            items=[],
+            limit=50,
+            offset=0,
+        )
+        assert paginated.total == 0
+        assert paginated.items == []
+        assert paginated.limit == 50
+        assert paginated.offset == 0
+
+
+class TestSessionSchemas:
+    """Tests for Phase 2 Milestone 2.3 User Session schemas."""
+
+    def test_session_query_params_defaults(self) -> None:
+        params = SessionQueryParams()
+        assert params.host_id is None
+        assert params.linux_user_id is None
+        assert params.username is None
+        assert params.session_type is None
+        assert params.terminal is None
+        assert params.remote_host is None
+        assert params.start_time is None
+        assert params.end_time is None
+        assert params.is_active is None
+        assert params.limit == 50
+        assert params.offset == 0
+
+    def test_session_query_params_bounds(self) -> None:
+        with pytest.raises(ValidationError):
+            SessionQueryParams(limit=0)
+        with pytest.raises(ValidationError):
+            SessionQueryParams(limit=101)
+        with pytest.raises(ValidationError):
+            SessionQueryParams(offset=-1)
+
+    def test_session_response_from_dict(self) -> None:
+        sid = uuid.uuid4()
+        hid = uuid.uuid4()
+        uid = uuid.uuid4()
+        t_start = utcnow()
+        resp = SessionResponse(
+            id=sid,
+            host_id=hid,
+            linux_user_id=uid,
+            username="alice",
+            uid=1000,
+            session_type="ssh",
+            terminal="pts/0",
+            remote_host="192.168.1.100",
+            started_at=t_start,
+            ended_at=None,
+            is_active=True,
+            duration_seconds=None,
+            created_at=t_start,
+        )
+        assert resp.id == sid
+        assert resp.host_id == hid
+        assert resp.username == "alice"
+        assert resp.is_active is True
+        assert resp.duration_seconds is None
+
+    def test_session_detail_response_with_processes(self) -> None:
+        sid = uuid.uuid4()
+        hid = uuid.uuid4()
+        pid = uuid.uuid4()
+        t = utcnow()
+        proc = ProcessSummary(
+            id=pid,
+            pid=1234,
+            ppid=1000,
+            command="/bin/bash",
+            started_at=t,
+            ended_at=None,
+        )
+        detail = SessionDetailResponse(
+            id=sid,
+            host_id=hid,
+            started_at=t,
+            created_at=t,
+            process_count=1,
+            processes=[proc],
+        )
+        assert detail.id == sid
+        assert detail.process_count == 1
+        assert len(detail.processes) == 1
+        assert detail.processes[0].pid == 1234
+
+    def test_paginated_session_response_valid(self) -> None:
+        paginated = PaginatedSessionResponse(
             total=0,
             items=[],
             limit=50,

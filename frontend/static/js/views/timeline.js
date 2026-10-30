@@ -195,6 +195,15 @@
         const chip = createEl('span', 'correlation-chip chip-session');
         const text = 'Session: ' + (sc.terminal || sc.session_type || 'active');
         chip.textContent = text;
+        if (sc.session_id) {
+          chip.style.cursor = 'pointer';
+          chip.setAttribute('title', 'Click to inspect session details');
+          chip.addEventListener('click', () => {
+            if (window.OsirisSessions && typeof window.OsirisSessions.openSessionModal === 'function') {
+              window.OsirisSessions.openSessionModal(sc.session_id);
+            }
+          });
+        }
         contextSection.appendChild(chip);
       }
 

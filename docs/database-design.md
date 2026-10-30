@@ -132,24 +132,48 @@ linux_users
 UNIQUE (host_id, uid)
 ```
 
-### 3.3 Session (Phase 2)
+### 3.3 Session (Phase 2 — Milestone 2.3)
 
-> Moved to Phase 2. Requires the Security/System Log Collector to provide
-> authentication and login event data. No concrete Phase 1 collector produces
-> session information.
+User sessions represent interactive and remote user login sessions on monitored hosts, reconstructed from system log observations (SSHD, PAM, console login, and systemd-logind).
 
 ```
 sessions
 ├── id              UUID        PRIMARY KEY
 ├── host_id         UUID        FK → hosts.id
-├── linux_user_id   UUID        FK → linux_users.id
-├── session_type    VARCHAR     (e.g., 'tty', 'pts', 'ssh')
-├── terminal        VARCHAR
-├── remote_host     VARCHAR
+├── linux_user_id   UUID        FK → linux_users.id (NULLABLE)
+├── session_type    VARCHAR(50) (e.g., 'ssh', 'tty', 'systemd', 'su')
+├── terminal        VARCHAR(255)(e.g., 'pts/0', 'tty1')
+├── remote_host     VARCHAR(255)(e.g., IP address or hostname)
 ├── started_at      TIMESTAMPTZ NOT NULL
-├── ended_at        TIMESTAMPTZ
+├── ended_at        TIMESTAMPTZ (NULL while session is active)
 └── created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+INDEX ix_sessions_host_started (host_id, started_at)
+INDEX ix_sessions_linux_user_id (linux_user_id)
 ```
+
+#### 3.3.1 Session Reconstruction & Lifecycle Architecture
+
+`SessionReconstructionService` (`backend/services/sessions/service.py`) processes authentication observations to maintain session lifecycle:
+
+1. **Multi-Event Login Deduplication:**
+   OpenSSH logins typically emit an `Accepted publickey/password` event followed immediately (0-2 seconds) by a `pam_unix(sshd:session): session opened` event. To prevent duplicate session records, the service checks for an existing active session on the same host, terminal, and user within a configurable correlation window (default: 10s). If found, the session is updated or preserved rather than creating a duplicate.
+
+2. **Terminal Collision Resolution:**
+   Pseudo-terminals (e.g. `pts/0`) are frequently reused across successive connections. If a new login is observed on a terminal that has an existing unclosed session from an earlier time, the service automatically closes the stale session at the new session's start time before creating the new session.
+
+3. **Session Closure:**
+   Explicit logout events (`pam_unix session closed`, `systemd-logind session removed`, or console logout) locate the active session matching `host_id`, `terminal` (or `user_id`), and mark `ended_at = observation.timestamp`.
+
+4. **Privilege Escalation Tracking:**
+   `sudo` executions and `su` switches are tracked as distinct security events (`auth.sudo`, `auth.privilege_escalation`). Sudo commands preserve the originating interactive login session while logging target user, command, and TTY in event payloads, preventing attribution hijacking.
+
+5. **Process Correlation Semantics:**
+   Processes are mapped to sessions based on:
+   - Identical `host_id`
+   - Matching Linux user identity (`linux_user_id` or `uid`)
+   - Temporal containment: `session.started_at <= process.started_at <= (session.ended_at or NOW())`
+   - Optional terminal affinity (`process.terminal == session.terminal` when available)
+   This eliminates PID reuse ambiguity by bounding process lookups strictly within the session's active lifetime.
 
 ### 3.4 Process
 

@@ -289,21 +289,66 @@ the Event Processing Layer (Milestone 1.3).
 
 ---
 
-### Milestone 2.3 — Security/System Log Collector
+### Milestone 2.3 — Security/System Log Collector & Session Tracking (Completed)
 
-**Goal:** Collect authentication, sudo, and security-relevant system log events.
+**Goal:** Collect authentication, sudo, and security-relevant system log events; reconstruct and track user login sessions with process lifecycle correlation.
 
-- [ ] Security/System Log Collector implementation
-  - Read from `/var/log/auth.log`, `journalctl`, or syslog
-  - Parse authentication success/failure, sudo usage, session events
-  - Produce structured observations via `parse()`
-- [ ] Event types: `auth.login_success`, `auth.login_failure`, `auth.sudo`, `syslog.event`
-- [ ] Integration with Event Processing Layer
+- [x] Security/System Log Collector (`collectors/syslog/collector.py`)
+  - Incremental cursor tracking with inode/device log rotation detection (`checkpoint.py`)
+  - Auto-discovery across `/var/log/auth.log`, `/var/log/secure`, `/var/log/syslog`
+  - Resilient permission handling with warning telemetry
+- [x] Comprehensive Syslog Parser (`collectors/syslog/parser.py`)
+  - RFC 3164 (BSD syslog) and RFC 5424/ISO 8601 timestamp parsing with leap-year handling
+  - SSH login accepted/failed/invalid user parsing
+  - PAM session open and close parsing
+  - Sudo command execution parsing with target user and TTY
+  - Su authentication failure and transition parsing
+  - Systemd-logind session creation and removal parsing
+  - Local console login/logout parsing
+  - Generic syslog fallback
+- [x] Structured Event Generation
+  - Emits `auth.login_success`, `auth.login_failure`, `auth.sudo`, `auth.privilege_escalation`, `auth.session_close`, `syslog.event`
+- [x] Session Reconstruction Engine (`backend/services/sessions/service.py`)
+  - Stateful session tracking persisted into `user_sessions`
+  - Multi-event login deduplication (correlating SSH `Accepted` and PAM `session opened` within 10s window)
+  - Active session closure upon explicit logout (PAM close, systemd-logind remove, or console logout)
+  - Process-to-session association with temporal bounds, TTY/terminal matching, and host isolation
+  - PID reuse protection ensuring processes match active session lifetime window
+  - Sudo/su privilege escalation tracking distinct from interactive login sessions
+- [x] Session Retrieval REST API (`backend/api/routes/sessions.py`)
+  - `GET /api/sessions`: Paginated session query with filters (host_id, username, session_type, is_active, start_time, end_time)
+  - `GET /api/sessions/{session_id}`: Detailed session inspection with associated active/terminated processes
+- [x] Frontend Session Explorer & Investigation Modal (`frontend/static/js/views/sessions.js`)
+  - Session table with user, terminal, remote IP, state (Active vs Closed), duration, and command counts
+  - Interactive Session Detail Modal inspecting full metadata, sudo executions, and associated processes
+  - Bi-directional cross-navigation between Sessions explorer and Timeline view
+  - Zero `innerHTML`, zero `localStorage`, zero `eval`, strict DOM manipulation
+- [x] End-to-End Pipeline & Contract Testing
+  - 100% test pass rate across parser, collector, reconstruction, process association, REST API, frontend contracts, and integration pipeline
 
 **Testing Checkpoint:**
-- Collector produces valid structured observations
-- Authentication events are correctly processed and stored
-- Collector handles missing or inaccessible log files gracefully
+- Collector produces valid structured observations from syslog/auth.log
+- Authentication and session events correctly update `user_sessions` and `events`
+- Processes are deterministically mapped to active user sessions
+- Retrieval API returns accurate session summaries and associated processes
+- Frontend displays interactive session explorer and modal dialog
+- All 1002 tests pass cleanly (12 skipped, 30 warnings)
+
+**Milestone 2.3 Validation Evidence:**
+- **Environment:** macOS Darwin (Apple Silicon) / Python 3.12.13
+- **Full Test Suite:** 1002 passed, 12 skipped, 30 warnings in 15.34s
+  - 28 syslog parser unit tests passed (`tests/unit/test_syslog_parser.py`).
+  - 13 syslog collector unit tests passed (`tests/unit/test_syslog_collector.py`).
+  - 14 session reconstruction unit tests passed (`tests/unit/test_session_reconstruction.py`).
+  - 8 session process association unit tests passed (`tests/unit/test_session_process_association.py`).
+  - 12 session API route unit tests passed (`tests/unit/test_api_sessions.py`).
+  - 10 session frontend contract tests passed (`tests/unit/test_sessions_view_contract.py`).
+  - 1 comprehensive end-to-end integration test passed (`tests/integration/test_session_lifecycle_integration.py`).
+  - 56 Pydantic schema tests passed (`tests/unit/test_schemas.py`).
+  - 26 Phase 1.6 cross-view contract tests passed (`tests/unit/test_phase16_integration.py`).
+  - 12 skipped: 11 Linux integration tests and 1 SQLite CHECK constraint test.
+- **JavaScriptCore (jsc) Syntax Validation:** All 9 JavaScript controllers (including `sessions.js` and updated `timeline.js`) cleanly validated with exit code 0.
+- **Security Boundaries Verified:** Zero `localStorage`, zero `innerHTML`, zero `eval`, authenticated endpoints, strictly scoped host isolation.
 
 ---
 

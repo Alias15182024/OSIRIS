@@ -43,6 +43,7 @@
         resources: document.getElementById('view-resources'),
         files: document.getElementById('view-files'),
         timeline: document.getElementById('view-timeline'),
+        sessions: document.getElementById('view-sessions'),
       },
 
       // Modal elements
@@ -348,6 +349,11 @@
     // Load timeline data when timeline view becomes active
     if (viewName === 'timeline' && window.OsirisTimeline && typeof window.OsirisTimeline.loadTimeline === 'function') {
       window.OsirisTimeline.loadTimeline();
+    }
+
+    // Load sessions data when sessions view becomes active
+    if (viewName === 'sessions' && window.OsirisSessions && typeof window.OsirisSessions.loadSessions === 'function') {
+      window.OsirisSessions.loadSessions();
     }
   }
 

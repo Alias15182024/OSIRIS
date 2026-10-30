@@ -521,3 +521,87 @@ All Milestone 2.2 components have been implemented, verified through automated u
   - `tests/unit/test_api_timeline.py` (21 passed): Auth enforcement, query filtering (host, record_type, process_id, pid, username), global timeline, mixed naive/aware datetimes, pagination, negative pid/uid 422 validation, OpenAPI registration.
   - `tests/unit/test_timeline_view_contract.py` (14 passed): DOM structure, static security rules, JavaScriptCore syntax validation.
   - `tests/unit/test_schemas.py` (51 passed): Pydantic v2 timeline schemas, non-negative pid/uid constraints, and envelope validation.
+
+---
+
+# Phase 2 Milestone 2.3: Session Reconstruction & Tracking Walkthrough
+
+## 1. Architecture & Component Summary
+
+### 1.1 Syslog Collector & Parser ([`collectors/syslog/`](file:///Users/alias/Desktop/OSIRIS/collectors/syslog/))
+- **Syslog Parser ([`collectors/syslog/parser.py`](file:///Users/alias/Desktop/OSIRIS/collectors/syslog/parser.py))**:
+  - Implements multi-format header parsing covering RFC 3164 (BSD syslog, e.g., `Oct 30 14:02:11`) with current/leap year resolution, and RFC 5424/ISO 8601 (`2026-10-30T14:02:11.123456+00:00`).
+  - Regex-driven message parsers classify SSH logins (`Accepted ...`), SSH failures (`Failed ...`), invalid users, PAM session open/close (`pam_unix(...:session): session opened/closed for user ...`), sudo command execution (`sudo: alice : TTY=pts/0 ; PWD=... ; USER=root ; COMMAND=...`), su transitions, systemd-logind sessions (`New session 42 of user ...`), and local console logins.
+  - Generates structured event payloads with standardized field names (`event_type`, `action`, `user`, `uid`, `terminal`, `remote_host`, `sudo_target_user`, `sudo_command`, `systemd_session_id`).
+- **Log Cursor & Rotation Manager ([`collectors/syslog/checkpoint.py`](file:///Users/alias/Desktop/OSIRIS/collectors/syslog/checkpoint.py))**:
+  - Inode and device tracking detects standard log rotation (`auth.log` -> `auth.log.1`), copytruncate operations (size truncation without inode change), and file recreation.
+  - Incrementally reads newly appended bytes, persisting cursor state for seamless restartability.
+- **Syslog Collector ([`collectors/syslog/collector.py`](file:///Users/alias/Desktop/OSIRIS/collectors/syslog/collector.py))**:
+  - Derives from `BaseCollector`, automatically discovering host auth logs across `/var/log/auth.log`, `/var/log/secure`, and `/var/log/syslog`.
+  - Gracefully handles permission denied errors (common in unprivileged test or container environments) by emitting warning logs rather than crashing.
+
+### 1.2 Session Reconstruction Engine ([`backend/services/sessions/service.py`](file:///Users/alias/Desktop/OSIRIS/backend/services/sessions/service.py))
+- **Stateful Lifecycle Management**:
+  - Reconstructs sessions from disparate log sources into the `user_sessions` table (`UserSession` model).
+  - Handles OpenSSH multi-event login patterns (SSH `Accepted` followed by PAM `session opened`) via a 10-second correlation window to prevent duplicate session records.
+  - Detects terminal reuse (`pts/0`) and terminates stale active sessions before creating new ones.
+  - Matches explicit logout events (`pam_unix session closed`, `systemd-logind session removed`, console logout) to active sessions, setting `ended_at`.
+- **Process Association & PID Reuse Protection**:
+  - Links processes from the `processes` table to sessions based on `host_id`, `linux_user_id`, matching terminal (when present), and strict temporal containment:
+    `session.started_at <= process.started_at <= (session.ended_at or NOW())`.
+  - Disambiguates reused PIDs by strictly bounding process queries to the active lifetime of each session.
+- **Sudo & Privilege Escalation Tracking**:
+  - Sudo executions and `su` switches are recorded as security events tied to the session and user, preserving the interactive login user identity while recording the elevated target user and executed command.
+
+### 1.3 Session Retrieval REST API ([`backend/api/routes/sessions.py`](file:///Users/alias/Desktop/OSIRIS/backend/api/routes/sessions.py))
+- **`GET /api/sessions`**:
+  - Paginated list of sessions with filtering by `host_id`, `username`, `session_type`, `is_active`, `start_time`, and `end_time`.
+  - Returns `PaginatedSessionResponse` containing `SessionResponse` items, duration calculation, and total count.
+- **`GET /api/sessions/{session_id}`**:
+  - Detailed view of a single session returning `SessionDetailResponse`.
+  - Includes user details, session metrics (duration, status), and a list of all associated processes (`ProcessSummary` with PID, name, cmdline, start/end time, state).
+  - Returns 404 for nonexistent UUID and 422 for malformed UUID format.
+
+### 1.4 Frontend Integration ([`frontend/static/js/views/sessions.js`](file:///Users/alias/Desktop/OSIRIS/frontend/static/js/views/sessions.js))
+- **Sessions View Explorer**:
+  - Modern cybersecurity UI featuring a responsive data table of login sessions.
+  - Filter controls: Host UUID, Username, Session Type (SSH, TTY, Systemd), Active Only toggle.
+  - Badges for session state (Active: Green pulse; Closed: Slate).
+- **Session Detail Modal**:
+  - Detailed session metadata (Session ID, Terminal, Remote Host, Duration, Start/End times).
+  - Associated processes table showing command, PID, status, and lifetime.
+  - "View in Timeline" navigation button directly linking to the forensic timeline with session filters applied.
+- **Security & Hygiene**:
+  - Zero `innerHTML`, zero `localStorage`, zero `eval`.
+  - Cleanly passes Apple JavaScriptCore (`jsc`) syntax validation.
+
+---
+
+## 2. Test Verification & Results
+
+### 2.1 Full Workspace Pytest Results
+```text
+================ 1002 passed, 12 skipped, 30 warnings in 15.34s ================
+```
+
+### 2.2 Milestone 2.3 Targeted Test Suites
+- **`tests/unit/test_syslog_parser.py` (28 passed)**:
+  - RFC 3164 and RFC 5424 formats, ISO timestamps without timezone offset, SSH accepted/failed/invalid, PAM session opened/closed, sudo execution with GROUP/ENV attributes, su transitions, systemd-logind sessions, console logins, generic log fallback, year-wrap edge cases.
+- **`tests/unit/test_syslog_collector.py` (13 passed)**:
+  - Cursor tracking, checkpoint file persistence across restarts, partial in-flight line buffering, log rotation detection via inode/device across `.1` and dateext formats, copytruncate detection, missing log tolerance, permission error handling.
+- **`tests/unit/test_session_reconstruction.py` (14 passed)**:
+  - Session creation from SSH and PAM, login deduplication within 10s window, multi-user isolation on same IP/port, terminal reuse closure, explicit logout handling without terminating unrelated sessions, sudo execution tracking, multi-host isolation.
+- **`tests/unit/test_session_process_association.py` (8 passed)**:
+  - Process matching by time window, terminal matching, cross-host isolation, PID reuse protection across time boundaries, child process hierarchy tracking via PPID, cross-user root command segregation.
+- **`tests/unit/test_api_sessions.py` (12 passed)**:
+  - Bearer authentication enforcement, paginated listings, filtering (username, host, is_active, time bounds), single session detail with processes, 404/422 responses.
+- **`tests/unit/test_sessions_view_contract.py` (10 passed)**:
+  - DOM structure compliance, zero `innerHTML`, zero `localStorage`, zero `eval`, JavaScriptCore syntax verification.
+- **`tests/integration/test_session_lifecycle_integration.py` (1 passed)**:
+  - Full end-to-end integration: parsing auth log, session reconstruction, process correlation, timeline reconstruction, and REST API verification.
+- **`tests/unit/test_schemas.py` (56 passed)**:
+  - Validation of `SessionQueryParams`, `SessionResponse`, `SessionDetailResponse`, `PaginatedSessionResponse`, `ProcessSummary`.
+- **`tests/unit/test_phase16_integration.py` (26 passed)**:
+  - All API routes and contracts verified across frontend files.
+- **Apple JavaScriptCore (`jsc`) Validation**:
+  - All 9 frontend JavaScript scripts validated with zero syntax errors.

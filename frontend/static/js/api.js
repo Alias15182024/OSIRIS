@@ -24,6 +24,8 @@
     PROCESSES: '/api/processes',
     RESOURCES: '/api/resources',
     FILES: '/api/files',
+    SESSIONS: '/api/sessions',
+    TIMELINE: '/api/timeline',
   });
 
   let authExpiredCallback = null;
@@ -230,6 +232,36 @@
     return await response.json();
   }
 
+  /**
+   * Fetch paginated user sessions with optional filtering parameters.
+   * @param {Object} [params={}]
+   * @returns {Promise<Object>} PaginatedSessionResponse
+   */
+  async function getSessions(params = {}) {
+    const query = new URLSearchParams();
+    Object.keys(params).forEach((key) => {
+      const val = params[key];
+      if (val !== undefined && val !== null && val !== '') {
+        query.append(key, String(val));
+      }
+    });
+    const qs = query.toString();
+    const url = qs ? `${ENDPOINTS.SESSIONS}?${qs}` : ENDPOINTS.SESSIONS;
+    return await fetchWithAuth(url);
+  }
+
+  /**
+   * Fetch single user session detail by UUID.
+   * @param {string} sessionId
+   * @returns {Promise<Object>} SessionDetailResponse
+   */
+  async function getSession(sessionId) {
+    if (!sessionId) {
+      throw new Error('sessionId is required');
+    }
+    return await fetchWithAuth(`${ENDPOINTS.SESSIONS}/${encodeURIComponent(sessionId)}`);
+  }
+
   // Export to global namespace
   window.OsirisApi = Object.freeze({
     ENDPOINTS,
@@ -243,6 +275,8 @@
     logout,
     getHealth,
     getStatus,
+    getSessions,
+    getSession,
   });
 
 })(typeof window !== 'undefined' ? window : this);
