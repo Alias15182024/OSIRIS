@@ -219,15 +219,15 @@ the Event Processing Layer (Milestone 1.3).
 
 ## Phase 2: Reconstruct & Detect
 
-### Milestone 2.1 — Historical Storage, Snapshots, and Session Tracking
+### Milestone 2.1 — Historical Storage, Snapshots, and Session Tracking (Completed)
 
 **Goal:** Support system-state snapshots, historical queries, and session data.
 
-- [ ] Snapshot table migration
-- [ ] Session table migration (enabled by Security/System Log Collector)
-- [ ] Snapshot creation service (capture process list, resource state)
-- [ ] Snapshot retrieval API
-- [ ] Historical event queries with time-range filters
+- [x] Snapshot table migration
+- [x] Session table migration (enabled by Security/System Log Collector)
+- [x] Snapshot creation service (capture process list, resource state)
+- [x] Snapshot retrieval API
+- [x] Historical event queries with time-range filters
 
 > **Note:** Thread entity is removed from scope. It will only be added if a
 > concrete requirement is later identified.
@@ -235,6 +235,22 @@ the Event Processing Layer (Milestone 1.3).
 **Testing Checkpoint:**
 - Snapshots are created and stored correctly
 - Historical queries return accurate results for specified time ranges
+- Complete snapshot retrieval API tested with 100% pass rate
+
+**Milestone 2.1 Validation Evidence:**
+- **Environment:** macOS Darwin (Apple Silicon) / Python 3.12.13
+- **Full Test Suite:** 837 passed, 12 skipped, 31 warnings in 14.12s
+  - 38 snapshot creation service unit tests passed (`tests/unit/test_snapshot_service.py`).
+  - 37 snapshot API unit tests passed (`tests/unit/test_api_snapshots.py`).
+  - 44 Pydantic schema tests passed (`tests/unit/test_schemas.py`).
+  - 12 skipped: 11 Linux integration tests and 1 SQLite CHECK constraint test.
+- **API Endpoints Verified:**
+  - `GET /api/snapshots` (paginated listing, host filtering, type filtering, UTC time-range filtering, deterministic ordering by newest first).
+  - `GET /api/snapshots/{snapshot_id}` (single snapshot retrieval, complete JSON data serialization, 404 on nonexistent record, 422 on invalid UUID).
+- **Security & Authorization Verified:**
+  - Bearer token authentication required on all snapshot endpoints (401 on missing/invalid/expired token, 403 on deactivated account).
+- **Transaction Discipline Verified:**
+  - SnapshotCreationService preserves caller-owned transaction boundaries without calling `commit()` or `rollback()`.
 
 ---
 

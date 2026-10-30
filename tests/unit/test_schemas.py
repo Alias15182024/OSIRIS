@@ -29,10 +29,13 @@ from backend.api.schemas import (
     PaginatedFileResponse,
     PaginatedProcessResponse,
     PaginatedResourceSnapshotResponse,
+    PaginatedSnapshotResponse,
     ProcessQueryParams,
     ProcessResponse,
     ResourceSnapshotQueryParams,
     ResourceSnapshotResponse,
+    SnapshotQueryParams,
+    SnapshotResponse,
     StatusResponse,
     TokenResponse,
     UserResponse,
@@ -42,6 +45,7 @@ from backend.db.models.event import Event
 from backend.db.models.file import File
 from backend.db.models.process import Process
 from backend.db.models.resource_snapshot import ResourceSnapshot
+from backend.db.models.snapshot import Snapshot
 
 
 def utcnow() -> datetime:
@@ -665,3 +669,115 @@ class TestStatusAndErrorSchemas:
     def test_error_detail_missing_field_raises(self) -> None:
         with pytest.raises(ValidationError):
             ErrorDetail(detail="Failed")
+
+
+# ============================================================================
+# Snapshot Schemas Tests
+# ============================================================================
+
+
+class TestSnapshotSchemas:
+    """Tests for Phase 2 Milestone 2.1 snapshot schemas."""
+
+    def test_snapshot_query_params_defaults(self) -> None:
+        params = SnapshotQueryParams()
+        assert params.host_id is None
+        assert params.snapshot_type is None
+        assert params.start_time is None
+        assert params.end_time is None
+        assert params.limit == 50
+        assert params.offset == 0
+
+    def test_snapshot_query_params_valid(self) -> None:
+        hid = uuid.uuid4()
+        t0 = utcnow()
+        params = SnapshotQueryParams(
+            host_id=hid,
+            snapshot_type="system_state",
+            start_time=t0,
+            end_time=t0,
+            limit=25,
+            offset=10,
+        )
+        assert params.host_id == hid
+        assert params.snapshot_type == "system_state"
+        assert params.start_time == t0
+        assert params.end_time == t0
+        assert params.limit == 25
+        assert params.offset == 10
+
+    def test_snapshot_query_params_limit_zero_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            SnapshotQueryParams(limit=0)
+
+    def test_snapshot_query_params_limit_above_max_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            SnapshotQueryParams(limit=101)
+
+    def test_snapshot_query_params_offset_negative_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            SnapshotQueryParams(offset=-1)
+
+    def test_snapshot_response_valid(self) -> None:
+        sid = uuid.uuid4()
+        hid = uuid.uuid4()
+        t = utcnow()
+        payload = {"processes": [{"pid": 1, "cmd": "init"}], "resources": {"cpu": 10.5}}
+        resp = SnapshotResponse(
+            id=sid,
+            host_id=hid,
+            timestamp=t,
+            snapshot_type="system_state",
+            data=payload,
+            created_at=t,
+        )
+        assert resp.id == sid
+        assert resp.host_id == hid
+        assert resp.timestamp == t
+        assert resp.snapshot_type == "system_state"
+        assert resp.data == payload
+        assert resp.created_at == t
+
+    def test_snapshot_response_orm_validation(self) -> None:
+        sid = uuid.uuid4()
+        hid = uuid.uuid4()
+        t = utcnow()
+        data = {"processes": [], "resources": None}
+        orm_snap = Snapshot(
+            id=sid,
+            host_id=hid,
+            timestamp=t,
+            snapshot_type="system_state",
+            data=data,
+            created_at=t,
+        )
+        resp = SnapshotResponse.model_validate(orm_snap)
+        assert resp.id == sid
+        assert resp.host_id == hid
+        assert resp.timestamp == t
+        assert resp.snapshot_type == "system_state"
+        assert resp.data == data
+        assert resp.created_at == t
+
+    def test_snapshot_response_empty_data(self) -> None:
+        resp = SnapshotResponse(
+            id=uuid.uuid4(),
+            host_id=uuid.uuid4(),
+            timestamp=utcnow(),
+            snapshot_type="system_state",
+            data={},
+            created_at=utcnow(),
+        )
+        assert resp.data == {}
+
+    def test_paginated_snapshot_response_valid(self) -> None:
+        paginated = PaginatedSnapshotResponse(
+            total=0,
+            items=[],
+            limit=50,
+            offset=0,
+        )
+        assert paginated.total == 0
+        assert paginated.items == []
+        assert paginated.limit == 50
+        assert paginated.offset == 0

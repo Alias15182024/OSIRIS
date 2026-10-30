@@ -276,3 +276,173 @@ Milestone 1.6 delivers a lightweight, pure vanilla HTML5/CSS3/JavaScript Single 
 - **Full Workspace Pytest Suite:** 463 passed, 12 skipped in 3.23s.
 - **Phase 1.6 Frontend Contract Suite:** 132 passed across 7 test suites.
 - **JavaScriptCore Runtime Syntax Validation:** All 7 JavaScript files validated with `jsc` (exit code 0).
+
+---
+
+# OSIRIS Milestone 2.1: Historical Storage, Snapshots, and Snapshot Retrieval API Walkthrough
+
+## Summary of Completed Work
+Milestone 2.1 establishes point-in-time forensic snapshot capturing, historical session tracking foundations, and authenticated RESTful retrieval endpoints for stored system-state snapshots.
+
+All components of Milestone 2.1 have been implemented, verified, and validated:
+1. **Database Models & Migration 0003**: `Snapshot` and `UserSession` models mapped to PostgreSQL (`JSONB`) and SQLite (`JSON`) with composite index `ix_snapshots_host_ts`.
+2. **Snapshot Creation Service**: `SnapshotService` in `backend/services/snapshots/service.py` captures active processes and latest resource metrics into a unified snapshot record, maintaining strict caller transaction ownership.
+3. **Pydantic Schemas**: `backend/api/schemas/snapshots.py` provides `SnapshotQueryParams`, `SnapshotResponse`, and `PaginatedSnapshotResponse` with validation for UUIDs, ISO 8601 timestamps, and arbitrary JSON payloads.
+4. **Snapshot Retrieval REST API**: `backend/api/routes/snapshots.py` provides authenticated endpoints `GET /api/snapshots` and `GET /api/snapshots/{snapshot_id}`.
+5. **Full Test Coverage**: 31 comprehensive API tests in `tests/unit/test_api_snapshots.py`, 38 service tests in `tests/unit/test_snapshot_service.py`, and 44 schema tests in `tests/unit/test_schemas.py`.
+
+---
+
+## 1. Components Implemented
+
+### 1.1 Database Architecture (Migration 0003)
+- **`snapshots` table** (`backend/db/models/snapshot.py`):
+  - Primary key: `id` (UUID4).
+  - Foreign key: `host_id` referencing `hosts.id`.
+  - Column: `timestamp` (TIMESTAMPTZ / UTC datetime).
+  - Column: `snapshot_type` (VARCHAR(100), default `'system_state'`).
+  - Column: `data` (JSONB on PostgreSQL, JSON on SQLite, not null).
+  - Column: `created_at` (TIMESTAMPTZ / UTC datetime, default `utcnow`).
+  - Index: `ix_snapshots_host_ts` on `(host_id, timestamp)`.
+- **`sessions` table** (`backend/db/models/user_session.py`):
+  - Primary key: `id` (UUID4).
+  - Foreign key: `host_id` referencing `hosts.id`.
+  - Foreign key: `linux_user_id` referencing `linux_users.id` (nullable).
+  - Columns: `session_type`, `terminal`, `remote_host`, `started_at`, `ended_at`, `created_at`.
+  - Indexes: `ix_sessions_host_started`, `ix_sessions_linux_user_id`.
+
+### 1.2 Snapshot Creation Service (`backend/services/snapshots/service.py`)
+- **Forensic History**: Every invocation persists a new immutable snapshot record. Previous snapshots are never overwritten.
+- **Transaction Ownership**: The service executes `session.flush()` to surface database constraint violations immediately, but **never** calls `session.commit()` or `session.rollback()`. Transaction boundaries and rollbacks remain strictly caller-owned.
+- **Exception Hierarchy**:
+  - `SnapshotError`: Base class for service exceptions.
+  - `HostNotFoundError`: Raised when the target `host_id` does not exist in `hosts`.
+  - `SnapshotPersistenceError`: Raised when the database rejects an insert, attaching the underlying SQLAlchemy exception as `cause` / `__cause__`.
+- **Graceful Degradation**: Empty process lists (`[]`) or absent resource telemetry (`null`) are recorded faithfully without error.
+
+### 1.3 Pydantic Schemas (`backend/api/schemas/snapshots.py`)
+- **`SnapshotQueryParams`**:
+  - `host_id` (Optional[UUID]): Filter by monitored host UUID.
+  - `snapshot_type` (Optional[str]): Filter by snapshot type (e.g., `'system_state'`).
+  - `start_time` (Optional[datetime]): Earliest snapshot timestamp (inclusive).
+  - `end_time` (Optional[datetime]): Latest snapshot timestamp (inclusive).
+  - `limit` (int, default=50, ge=1, le=100): Maximum records per page.
+  - `offset` (int, default=0, ge=0): Pagination record offset.
+- **`SnapshotResponse`**:
+  - `id` (UUID), `host_id` (UUID), `timestamp` (datetime), `snapshot_type` (str), `data` (dict[str, Any]), `created_at` (datetime).
+  - Configured with `model_config = ConfigDict(from_attributes=True)` for seamless ORM model serialization.
+  - Prevents information leakage: strictly exposes snapshot attributes without leaking internal database metadata or host relationships.
+- **`PaginatedSnapshotResponse`**:
+  - Standard pagination envelope: `{ total: int, items: list[SnapshotResponse], limit: int, offset: int }`.
+
+### 1.4 REST Endpoints (`backend/api/routes/snapshots.py`)
+
+#### `GET /api/snapshots`
+- **Description**: Returns a paginated list of snapshots matching specified filters.
+- **Security**: Requires Bearer token authentication via `get_current_user`.
+- **Ordering**: Deterministic ordering with newest snapshots first (`Snapshot.timestamp.desc()`), and a stable secondary tie-breaker (`Snapshot.id.desc()`).
+- **Filters**:
+  - `host_id`: UUID
+  - `snapshot_type`: String match
+  - `start_time` / `end_time`: UTC-aware datetime comparisons (inclusive). Validates `start_time <= end_time` (returns HTTP 400 Bad Request if inverted; returns HTTP 400 if mixing naive and aware datetimes).
+- **Example Request**:
+  ```http
+  GET /api/snapshots?host_id=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa&snapshot_type=system_state&limit=2&offset=0 HTTP/1.1
+  Host: localhost:8000
+  Authorization: Bearer <valid_jwt_token>
+  ```
+- **Example Response (200 OK)**:
+  ```json
+  {
+    "total": 3,
+    "items": [
+      {
+        "id": "22222222-2222-4222-8222-222222222222",
+        "host_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "timestamp": "2026-03-01T12:00:10Z",
+        "snapshot_type": "system_state",
+        "data": {
+          "processes": [
+            {
+              "id": "99999999-9999-4999-8999-999999999999",
+              "pid": 101,
+              "ppid": 1,
+              "command": "/usr/bin/python3",
+              "executable": "/usr/bin/python3",
+              "linux_user_id": null,
+              "started_at": "2026-03-01T11:00:00Z"
+            }
+          ],
+          "resources": {
+            "id": "88888888-8888-4888-8888-888888888888",
+            "timestamp": "2026-03-01T12:00:10Z",
+            "cpu_percent": 15.2,
+            "memory_total": 16000000000,
+            "memory_used": 4000000000,
+            "memory_percent": 25.0,
+            "disk_read_bytes": 1048576,
+            "disk_write_bytes": 2097152,
+            "disk_usage_percent": 45.5
+          }
+        },
+        "created_at": "2026-03-01T12:00:10Z"
+      }
+    ],
+    "limit": 2,
+    "offset": 0
+  }
+  ```
+
+#### `GET /api/snapshots/{snapshot_id}`
+- **Description**: Retrieves a single snapshot by UUID.
+- **Security**: Requires Bearer token authentication via `get_current_user`.
+- **Validation**:
+  - Returns `422 Unprocessable Entity` if `snapshot_id` is not a valid UUID.
+  - Returns `404 Not Found` with `{"detail": "Snapshot not found"}` if the snapshot does not exist.
+- **Example Request**:
+  ```http
+  GET /api/snapshots/22222222-2222-4222-8222-222222222222 HTTP/1.1
+  Host: localhost:8000
+  Authorization: Bearer <valid_jwt_token>
+  ```
+- **Example Response (200 OK)**:
+  ```json
+  {
+    "id": "22222222-2222-4222-8222-222222222222",
+    "host_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "timestamp": "2026-03-01T12:00:10Z",
+    "snapshot_type": "system_state",
+    "data": {
+      "processes": [],
+      "resources": null
+    },
+    "created_at": "2026-03-01T12:00:10Z"
+  }
+  ```
+
+### 1.5 Error Handling & Security Model
+| Status Code | Reason | Response Detail |
+|-------------|--------|-----------------|
+| `400 Bad Request` | Inverted time range | `{"detail": "start_time must be less than or equal to end_time"}` |
+| `400 Bad Request` | Mixed naive and aware datetimes | `{"detail": "Cannot compare timezone-aware and naive datetimes"}` |
+| `401 Unauthorized` | Missing Authorization header | `{"detail": "Missing authentication credentials"}` |
+| `401 Unauthorized` | Invalid or malformed token | `{"detail": "Invalid or malformed token"}` |
+| `401 Unauthorized` | Expired token | `{"detail": "Token has expired"}` |
+| `403 Forbidden` | Inactive user account | `{"detail": "Inactive user account"}` |
+| `404 Not Found` | Nonexistent snapshot UUID | `{"detail": "Snapshot not found"}` |
+| `422 Unprocessable Entity` | Malformed UUID or out-of-range limit/offset | Standard FastAPI validation error envelope |
+
+---
+
+## 2. Test Verification & Results
+
+### 2.1 Test Suite Breakdown
+- **Full Workspace Pytest Suite**:
+  ```text
+  837 passed, 12 skipped, 30 warnings in 14.19s
+  ```
+  *(12 skipped: 11 Linux integration tests cleanly skipped on macOS Darwin due to lack of Linux `/proc` and `inotify`; 1 SQLite CHECK constraint test).*
+- **Phase 2 Milestone 2.1 Targeted Suites**:
+  - `tests/unit/test_api_snapshots.py` (37 passed): Listing, single retrieval, host filtering, type filtering, start/end time filtering, exact timestamp filtering, pagination with offsets beyond total, ordering, 404/422 errors, authentication/authorization enforcement, edge cases (empty JSON, large payloads, timezone offsets, multi-host isolation, case-insensitive UUID), OpenAPI registration, and PostgreSQL end-to-end integration with transaction rollback.
+  - `tests/unit/test_snapshot_service.py` (38 passed): Point-in-time creation, process & resource gathering, empty process handling, null resource handling, forensic immutability, caller-owned transaction discipline without service commits or rollbacks.
+  - `tests/unit/test_schemas.py` (44 passed): Schema defaults, boundary validation, serialization, and ORM validation.

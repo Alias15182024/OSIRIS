@@ -14,6 +14,7 @@ from backend.api.routes.events import router as events_router
 from backend.api.routes.files import router as files_router
 from backend.api.routes.processes import router as processes_router
 from backend.api.routes.resources import router as resources_router
+from backend.api.routes.snapshots import router as snapshots_router
 from backend.api.routes.status import router as status_router
 from backend.config import settings
 
@@ -67,6 +68,7 @@ app.include_router(events_router, prefix="/api/events", tags=["events"])
 app.include_router(processes_router, prefix="/api/processes", tags=["processes"])
 app.include_router(resources_router, prefix="/api/resources", tags=["resources"])
 app.include_router(files_router, prefix="/api/files", tags=["files"])
+app.include_router(snapshots_router, prefix="/api/snapshots", tags=["snapshots"])
 app.include_router(status_router, prefix="/api", tags=["status"])
 
 

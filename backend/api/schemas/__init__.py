@@ -30,6 +30,11 @@ from backend.api.schemas.resources import (
     ResourceSnapshotQueryParams,
     ResourceSnapshotResponse,
 )
+from backend.api.schemas.snapshots import (
+    PaginatedSnapshotResponse,
+    SnapshotQueryParams,
+    SnapshotResponse,
+)
 from backend.api.schemas.status import ErrorDetail, StatusResponse
 
 __all__ = [
@@ -43,10 +48,13 @@ __all__ = [
     "PaginatedFileResponse",
     "PaginatedProcessResponse",
     "PaginatedResourceSnapshotResponse",
+    "PaginatedSnapshotResponse",
     "ProcessQueryParams",
     "ProcessResponse",
     "ResourceSnapshotQueryParams",
     "ResourceSnapshotResponse",
+    "SnapshotQueryParams",
+    "SnapshotResponse",
     "StatusResponse",
     "TokenResponse",
     "UserResponse",

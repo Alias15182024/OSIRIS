@@ -182,9 +182,11 @@ class SnapshotService:
         )
 
         # 5. Persist — flush to surface constraint errors, don't commit.
-        # Transaction commit and rollback remain the caller's responsibility;
-        # the service does not roll back the session so caller-owned transaction
-        # boundaries and staged operations are preserved.
+        # Transaction commit and rollback remain the caller's responsibility.
+        # If flush fails, SQLAlchemy marks the transaction or savepoint as failed,
+        # requiring the caller to handle rollback or savepoint recovery.
+        # The service does not unilaterally roll back the session, preserving
+        # the caller's transaction management and savepoint control.
         try:
             self._session.add(snapshot)
             self._session.flush()
