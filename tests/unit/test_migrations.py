@@ -88,6 +88,49 @@ _sessions_table = sa.table(
     sa.column("created_at", sa.DateTime(timezone=True)),
 )
 
+_detection_rules_table = sa.table(
+    "detection_rules",
+    sa.column("id", sa.Uuid),
+    sa.column("rule_id", sa.String),
+    sa.column("name", sa.String),
+    sa.column("description", sa.String),
+    sa.column("category", sa.String),
+    sa.column("severity", sa.String),
+    sa.column("enabled", sa.Boolean),
+    sa.column("version", sa.Integer),
+    sa.column("rule_type", sa.String),
+    sa.column("conditions", sa.JSON),
+    sa.column("sequence_conditions", sa.JSON),
+    sa.column("time_window_seconds", sa.Integer),
+    sa.column("rule_metadata", sa.JSON),
+    sa.column("created_at", sa.DateTime(timezone=True)),
+    sa.column("updated_at", sa.DateTime(timezone=True)),
+)
+
+_detections_table = sa.table(
+    "detections",
+    sa.column("id", sa.Uuid),
+    sa.column("rule_id", sa.Uuid),
+    sa.column("rule_version", sa.Integer),
+    sa.column("host_id", sa.Uuid),
+    sa.column("event_id", sa.Uuid),
+    sa.column("process_id", sa.Uuid),
+    sa.column("session_id", sa.Uuid),
+    sa.column("timestamp", sa.DateTime(timezone=True)),
+    sa.column("severity", sa.String),
+    sa.column("title", sa.String),
+    sa.column("description", sa.String),
+    sa.column("category", sa.String),
+    sa.column("status", sa.String),
+    sa.column("notification_status", sa.String),
+    sa.column("matched_conditions", sa.JSON),
+    sa.column("evidence", sa.JSON),
+    sa.column("dedup_hash", sa.String),
+    sa.column("created_at", sa.DateTime(timezone=True)),
+    sa.column("acknowledged_at", sa.DateTime(timezone=True)),
+    sa.column("acknowledged_by_id", sa.Uuid),
+)
+
 
 def _populate_test_files(engine: sa.Engine, host_id: uuid.UUID) -> dict[str, uuid.UUID]:
     """Insert test records with legacy, canonical, and edge-case file_types."""
@@ -632,8 +675,8 @@ class TestSnapshotsAndSessionsMigrationSQLite:
         assert "sessions" not in down_tables
         assert "hosts" in down_tables
 
-        # 7. Re-upgrade to head is idempotent
-        command.upgrade(alembic_cfg, "head")
+        # 7. Re-upgrade to 0003_snapshots_and_sessions is idempotent
+        command.upgrade(alembic_cfg, "0003_snapshots_and_sessions")
         assert _get_current_revision(engine) == "0003_snapshots_and_sessions"
 
         inspector = sa.inspect(engine)
@@ -664,6 +707,12 @@ class TestSnapshotsAndSessionsMigrationSQLite:
         assert _get_current_revision(engine) == "0002_normalize_file_types"
 
         command.upgrade(alembic_cfg, "0003_snapshots_and_sessions")
+        assert _get_current_revision(engine) == "0003_snapshots_and_sessions"
+
+        command.upgrade(alembic_cfg, "0004_detections_and_rules")
+        assert _get_current_revision(engine) == "0004_detections_and_rules"
+
+        command.downgrade(alembic_cfg, "0003_snapshots_and_sessions")
         assert _get_current_revision(engine) == "0003_snapshots_and_sessions"
 
         command.downgrade(alembic_cfg, "0002_normalize_file_types")
@@ -809,8 +858,287 @@ class TestSnapshotsAndSessionsMigrationPostgreSQL:
         assert "snapshots" not in down_tables
         assert "sessions" not in down_tables
 
-        # Re-upgrade to head
-        command.upgrade(alembic_cfg, "head")
+        # Re-upgrade to 0003_snapshots_and_sessions
+        command.upgrade(alembic_cfg, "0003_snapshots_and_sessions")
         assert _get_current_revision(engine) == "0003_snapshots_and_sessions"
+
+        engine.dispose()
+
+
+class TestDetectionsAndRulesMigrationSQLite:
+    """Test 0004_detections_and_rules against an isolated SQLite database."""
+
+    def test_upgrade_and_downgrade_detections_and_rules(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        db_path = tmp_path / "disposable_detect.db"
+        db_url = f"sqlite:///{db_path}"
+
+        monkeypatch.setenv("OSIRIS_DATABASE_URL", db_url)
+        monkeypatch.setattr(settings, "database_url", db_url)
+
+        alembic_cfg = Config("alembic.ini")
+        alembic_cfg.set_main_option("sqlalchemy.url", db_url)
+
+        # 1. Upgrade through 0003
+        command.upgrade(alembic_cfg, "0003_snapshots_and_sessions")
+        engine = sa.create_engine(db_url)
+        assert _get_current_revision(engine) == "0003_snapshots_and_sessions"
+
+        inspector = sa.inspect(engine)
+        pre_tables = set(inspector.get_table_names())
+        assert "detection_rules" not in pre_tables
+        assert "detections" not in pre_tables
+
+        # 2. Upgrade to 0004_detections_and_rules
+        command.upgrade(alembic_cfg, "0004_detections_and_rules")
+        assert _get_current_revision(engine) == "0004_detections_and_rules"
+
+        # 3. Verify schema structure
+        inspector = sa.inspect(engine)
+        post_tables = set(inspector.get_table_names())
+        assert "detection_rules" in post_tables
+        assert "detections" in post_tables
+
+        rule_cols = {col["name"] for col in inspector.get_columns("detection_rules")}
+        expected_rule_cols = {
+            "id", "rule_id", "name", "description", "category", "severity",
+            "enabled", "version", "rule_type", "conditions", "sequence_conditions",
+            "time_window_seconds", "rule_metadata", "created_at", "updated_at"
+        }
+        assert expected_rule_cols.issubset(rule_cols)
+
+        detection_cols = {col["name"] for col in inspector.get_columns("detections")}
+        expected_detection_cols = {
+            "id", "rule_id", "rule_version", "host_id", "event_id", "process_id",
+            "session_id", "timestamp", "severity", "title", "description",
+            "category", "status", "notification_status", "matched_conditions",
+            "evidence", "dedup_hash", "created_at", "acknowledged_at", "acknowledged_by_id"
+        }
+        assert expected_detection_cols.issubset(detection_cols)
+
+        # Verify indexes
+        rule_indexes = {ix["name"] for ix in inspector.get_indexes("detection_rules")}
+        assert "ix_detection_rules_rule_id" in rule_indexes
+        assert "ix_detection_rules_category" in rule_indexes
+        assert "ix_detection_rules_severity" in rule_indexes
+        assert "ix_detection_rules_enabled" in rule_indexes
+
+        detection_indexes = {ix["name"] for ix in inspector.get_indexes("detections")}
+        assert "ix_detections_host_ts" in detection_indexes
+        assert "ix_detections_rule_id" in detection_indexes
+        assert "ix_detections_severity" in detection_indexes
+        assert "ix_detections_status" in detection_indexes
+        assert "ix_detections_category" in detection_indexes
+        assert "ix_detections_dedup_hash" in detection_indexes
+
+        # 4. Insert data into detection_rules and detections
+        now = _utcnow()
+        host_id = uuid.uuid4()
+        rule_db_id = uuid.uuid4()
+        detection_id = uuid.uuid4()
+
+        conditions_data = {"all": [{"field": "command", "operator": "startswith", "value": "sudo "}]}
+        evidence_data = {"triggering_events": [str(uuid.uuid4())], "summary": "sudo su executed"}
+        matched_data = {"matched_field": "command", "value": "sudo su"}
+
+        with engine.begin() as conn:
+            conn.execute(
+                _hosts_table.insert().values(
+                    id=host_id,
+                    hostname="detect-mig-host",
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                _detection_rules_table.insert().values(
+                    id=rule_db_id,
+                    rule_id="RULE-TEST-001",
+                    name="Test Detection Rule",
+                    description="Detects suspicious activity",
+                    category="privilege_escalation",
+                    severity="high",
+                    enabled=True,
+                    version=1,
+                    rule_type="single_event",
+                    conditions=conditions_data,
+                    sequence_conditions=None,
+                    time_window_seconds=None,
+                    rule_metadata={"author": "Security Team"},
+                    created_at=now,
+                    updated_at=None,
+                )
+            )
+            conn.execute(
+                _detections_table.insert().values(
+                    id=detection_id,
+                    rule_id=rule_db_id,
+                    rule_version=1,
+                    host_id=host_id,
+                    event_id=None,
+                    process_id=None,
+                    session_id=None,
+                    timestamp=now,
+                    severity="high",
+                    title="Suspicious Sudo Execution",
+                    description="User executed sudo su",
+                    category="privilege_escalation",
+                    status="open",
+                    notification_status="pending",
+                    matched_conditions=matched_data,
+                    evidence=evidence_data,
+                    dedup_hash="abc123hash",
+                    created_at=now,
+                    acknowledged_at=None,
+                    acknowledged_by_id=None,
+                )
+            )
+
+        # 5. Read back and verify persisted records
+        import json
+        with engine.connect() as conn:
+            rule_row = conn.execute(
+                sa.select(_detection_rules_table).where(_detection_rules_table.c.id == rule_db_id)
+            ).one()
+            assert rule_row.rule_id == "RULE-TEST-001"
+            assert rule_row.severity == "high"
+            raw_cond = rule_row.conditions if isinstance(rule_row.conditions, dict) else json.loads(rule_row.conditions)
+            assert raw_cond["all"][0]["operator"] == "startswith"
+
+            detect_row = conn.execute(
+                sa.select(_detections_table).where(_detections_table.c.id == detection_id)
+            ).one()
+            assert detect_row.host_id == host_id
+            assert detect_row.title == "Suspicious Sudo Execution"
+            assert detect_row.status == "open"
+            raw_ev = detect_row.evidence if isinstance(detect_row.evidence, dict) else json.loads(detect_row.evidence)
+            assert raw_ev["summary"] == "sudo su executed"
+
+        # 6. Downgrade to 0003_snapshots_and_sessions
+        command.downgrade(alembic_cfg, "0003_snapshots_and_sessions")
+        assert _get_current_revision(engine) == "0003_snapshots_and_sessions"
+
+        inspector = sa.inspect(engine)
+        down_tables = set(inspector.get_table_names())
+        assert "detection_rules" not in down_tables
+        assert "detections" not in down_tables
+        assert "snapshots" in down_tables
+        assert "sessions" in down_tables
+
+        # 7. Re-upgrade to 0004_detections_and_rules is idempotent
+        command.upgrade(alembic_cfg, "0004_detections_and_rules")
+        assert _get_current_revision(engine) == "0004_detections_and_rules"
+
+        inspector = sa.inspect(engine)
+        reup_tables = set(inspector.get_table_names())
+        assert "detection_rules" in reup_tables
+        assert "detections" in reup_tables
+
+        engine.dispose()
+
+
+class TestDetectionsAndRulesMigrationPostgreSQL:
+    """Test 0004_detections_and_rules against an isolated disposable PostgreSQL database."""
+
+    def test_upgrade_and_downgrade_detections_and_rules_postgres(
+        self, disposable_pg_url: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("OSIRIS_DATABASE_URL", disposable_pg_url)
+        monkeypatch.setattr(settings, "database_url", disposable_pg_url)
+
+        alembic_cfg = Config("alembic.ini")
+        alembic_cfg.set_main_option("sqlalchemy.url", disposable_pg_url)
+
+        # 1. Upgrade through 0003
+        command.upgrade(alembic_cfg, "0003_snapshots_and_sessions")
+        engine = sa.create_engine(disposable_pg_url)
+        assert _get_current_revision(engine) == "0003_snapshots_and_sessions"
+
+        # 2. Upgrade to 0004_detections_and_rules
+        command.upgrade(alembic_cfg, "0004_detections_and_rules")
+        assert _get_current_revision(engine) == "0004_detections_and_rules"
+
+        inspector = sa.inspect(engine)
+        tables = set(inspector.get_table_names())
+        assert "detection_rules" in tables
+        assert "detections" in tables
+
+        # Verify JSONB storage
+        now = _utcnow()
+        host_id = uuid.uuid4()
+        rule_db_id = uuid.uuid4()
+        detection_id = uuid.uuid4()
+
+        with engine.begin() as conn:
+            conn.execute(
+                _hosts_table.insert().values(
+                    id=host_id,
+                    hostname="pg-detect-host",
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                _detection_rules_table.insert().values(
+                    id=rule_db_id,
+                    rule_id="PG-RULE-001",
+                    name="PG Test Rule",
+                    description="PG test description",
+                    category="reconnaissance",
+                    severity="critical",
+                    enabled=True,
+                    version=1,
+                    rule_type="single_event",
+                    conditions={"all": [{"field": "object_path", "operator": "==", "value": "/etc/shadow"}]},
+                    sequence_conditions=None,
+                    time_window_seconds=None,
+                    rule_metadata={"tactics": ["TA0007"]},
+                    created_at=now,
+                    updated_at=None,
+                )
+            )
+            conn.execute(
+                _detections_table.insert().values(
+                    id=detection_id,
+                    rule_id=rule_db_id,
+                    rule_version=1,
+                    host_id=host_id,
+                    event_id=None,
+                    process_id=None,
+                    session_id=None,
+                    timestamp=now,
+                    severity="critical",
+                    title="Sensitive File Access",
+                    description="/etc/shadow read detected",
+                    category="reconnaissance",
+                    status="open",
+                    notification_status="pending",
+                    matched_conditions={"object_path": "/etc/shadow"},
+                    evidence={"file": "/etc/shadow", "user": "test"},
+                    dedup_hash="pgdeduphash123",
+                    created_at=now,
+                    acknowledged_at=None,
+                    acknowledged_by_id=None,
+                )
+            )
+
+        with engine.connect() as conn:
+            detect_row = conn.execute(
+                sa.select(_detections_table).where(_detections_table.c.id == detection_id)
+            ).one()
+            assert detect_row.severity == "critical"
+            assert detect_row.evidence["file"] == "/etc/shadow"
+
+        # Downgrade back to 0003
+        command.downgrade(alembic_cfg, "0003_snapshots_and_sessions")
+        assert _get_current_revision(engine) == "0003_snapshots_and_sessions"
+
+        inspector = sa.inspect(engine)
+        down_tables = set(inspector.get_table_names())
+        assert "detection_rules" not in down_tables
+        assert "detections" not in down_tables
+
+        # Re-upgrade to 0004
+        command.upgrade(alembic_cfg, "0004_detections_and_rules")
+        assert _get_current_revision(engine) == "0004_detections_and_rules"
 
         engine.dispose()

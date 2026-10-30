@@ -53,6 +53,7 @@
       invEventsCount: document.getElementById('inv-events-count'),
       invProcessesCount: document.getElementById('inv-processes-count'),
       invFilesCount: document.getElementById('inv-files-count'),
+      invDetectionsCount: document.getElementById('inv-detections-count'),
 
       // Recent events card
       recentEventsTable: document.getElementById('dashboard-recent-events-table'),
@@ -226,10 +227,11 @@
    * Load and render observational inventory counters via paginated totals.
    */
   async function loadInventoryCounters() {
-    const [eventsResult, processesResult, filesResult] = await Promise.allSettled([
+    const [eventsResult, processesResult, filesResult, detectionsResult] = await Promise.allSettled([
       window.OsirisApi.fetchWithAuth('/api/events?limit=1'),
       window.OsirisApi.fetchWithAuth('/api/processes?is_active=true&limit=1'),
       window.OsirisApi.fetchWithAuth('/api/files?limit=1'),
+      window.OsirisApi.fetchWithAuth('/api/detections?limit=1'),
     ]);
 
     // Total events counter
@@ -256,6 +258,15 @@
         dom.invFilesCount.textContent = filesResult.value.total.toLocaleString();
       } else {
         dom.invFilesCount.textContent = 'Unavailable';
+      }
+    }
+
+    // Open alerts counter
+    if (dom.invDetectionsCount) {
+      if (detectionsResult.status === 'fulfilled' && detectionsResult.value && typeof detectionsResult.value.total === 'number') {
+        dom.invDetectionsCount.textContent = detectionsResult.value.total.toLocaleString();
+      } else {
+        dom.invDetectionsCount.textContent = '0';
       }
     }
   }

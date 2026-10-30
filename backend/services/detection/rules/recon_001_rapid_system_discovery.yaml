@@ -1,0 +1,55 @@
+rule_id: OSIRIS-RECON-001
+name: Rapid Host and Network Discovery Execution Chain
+description: Detects rapid sequential execution of system identification and network discovery commands.
+category: reconnaissance
+severity: medium
+enabled: true
+version: 1
+rule_type: sequence
+explanation: Execution of multiple discovery commands (whoami, id, uname, ip, netstat) within a 3-minute window is characteristic of automated post-exploitation discovery or interactive attacker enumeration.
+sequence:
+  time_window_seconds: 180
+  stages:
+    - stage_id: host_identification
+      conditions:
+        all:
+          - field: event_type
+            operator: in
+            value: ["proc:exec", "proc:start"]
+          - any:
+            - field: command
+              operator: startswith
+              value: "uname"
+            - field: command
+              operator: startswith
+              value: "whoami"
+            - field: command
+              operator: startswith
+              value: "id"
+      min_count: 2
+      match_fields: []
+    - stage_id: network_discovery
+      conditions:
+        all:
+          - field: event_type
+            operator: in
+            value: ["proc:exec", "proc:start"]
+          - any:
+            - field: command
+              operator: startswith
+              value: "ip "
+            - field: command
+              operator: startswith
+              value: "ifconfig"
+            - field: command
+              operator: startswith
+              value: "netstat"
+            - field: command
+              operator: startswith
+              value: "ss "
+      min_count: 1
+      match_fields: []
+metadata:
+  mitre_technique: T1082
+  mitre_tactic: Discovery
+  author: OSIRIS Core Security Team

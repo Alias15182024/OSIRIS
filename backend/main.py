@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.api.routes.auth import router as auth_router
+from backend.api.routes.detections import router as detections_router
 from backend.api.routes.events import router as events_router
 from backend.api.routes.files import router as files_router
 from backend.api.routes.processes import router as processes_router
@@ -66,6 +67,7 @@ app.add_middleware(
 
 # Register route modules
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
+app.include_router(detections_router, prefix="/api/detections", tags=["detections"])
 app.include_router(events_router, prefix="/api/events", tags=["events"])
 app.include_router(processes_router, prefix="/api/processes", tags=["processes"])
 app.include_router(resources_router, prefix="/api/resources", tags=["resources"])

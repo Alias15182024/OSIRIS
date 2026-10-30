@@ -26,6 +26,7 @@
     FILES: '/api/files',
     SESSIONS: '/api/sessions',
     TIMELINE: '/api/timeline',
+    DETECTIONS: '/api/detections',
   });
 
   let authExpiredCallback = null;
@@ -262,6 +263,71 @@
     return await fetchWithAuth(`${ENDPOINTS.SESSIONS}/${encodeURIComponent(sessionId)}`);
   }
 
+  /**
+   * Fetch paginated security detections with optional filtering parameters.
+   * @param {Object} [params={}]
+   * @returns {Promise<Object>} PaginatedDetectionResponse
+   */
+  async function getDetections(params = {}) {
+    const query = new URLSearchParams();
+    Object.keys(params).forEach((key) => {
+      const val = params[key];
+      if (val !== undefined && val !== null && val !== '') {
+        query.append(key, String(val));
+      }
+    });
+    const qs = query.toString();
+    const url = qs ? `${ENDPOINTS.DETECTIONS}?${qs}` : ENDPOINTS.DETECTIONS;
+    return await fetchWithAuth(url);
+  }
+
+  /**
+   * Fetch single detection record by UUID.
+   * @param {string} detectionId
+   * @returns {Promise<Object>} DetectionResponse
+   */
+  async function getDetection(detectionId) {
+    if (!detectionId) {
+      throw new Error('detectionId is required');
+    }
+    return await fetchWithAuth(`${ENDPOINTS.DETECTIONS}/${encodeURIComponent(detectionId)}`);
+  }
+
+  /**
+   * Acknowledge a detection alert.
+   * @param {string} detectionId
+   * @param {string} [notes]
+   * @returns {Promise<Object>} DetectionResponse
+   */
+  async function acknowledgeDetection(detectionId, notes = null) {
+    if (!detectionId) {
+      throw new Error('detectionId is required');
+    }
+    const options = {
+      method: 'POST',
+      body: JSON.stringify(notes ? { notes } : {}),
+    };
+    return await fetchWithAuth(`${ENDPOINTS.DETECTIONS}/${encodeURIComponent(detectionId)}/acknowledge`, options);
+  }
+
+  /**
+   * Fetch registered declarative detection rules.
+   * @param {Object} [params={}]
+   * @returns {Promise<Array>} List of DetectionRuleResponse
+   */
+  async function getDetectionRules(params = {}) {
+    const query = new URLSearchParams();
+    Object.keys(params).forEach((key) => {
+      const val = params[key];
+      if (val !== undefined && val !== null && val !== '') {
+        query.append(key, String(val));
+      }
+    });
+    const qs = query.toString();
+    const url = qs ? `${ENDPOINTS.DETECTIONS}/rules?${qs}` : `${ENDPOINTS.DETECTIONS}/rules`;
+    return await fetchWithAuth(url);
+  }
+
   // Export to global namespace
   window.OsirisApi = Object.freeze({
     ENDPOINTS,
@@ -277,6 +343,10 @@
     getStatus,
     getSessions,
     getSession,
+    getDetections,
+    getDetection,
+    acknowledgeDetection,
+    getDetectionRules,
   });
 
 })(typeof window !== 'undefined' ? window : this);

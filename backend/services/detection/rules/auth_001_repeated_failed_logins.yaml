@@ -1,0 +1,32 @@
+rule_id: OSIRIS-AUTH-001
+name: Repeated Failed Authentication Attempts
+description: Detects multiple failed login or authentication attempts occurring within a brief evaluation window.
+category: suspicious_authentication
+severity: medium
+enabled: true
+version: 1
+rule_type: sequence
+explanation: Multiple consecutive authentication failures on the same host within a 5-minute window strongly indicates brute-force or credential guessing attacks.
+sequence:
+  time_window_seconds: 300
+  stages:
+    - stage_id: initial_failures
+      conditions:
+        all:
+          - field: event_type
+            operator: in
+            value: ["auth:login:fail", "auth:ssh:fail"]
+      min_count: 3
+      match_fields: []
+    - stage_id: sustained_failures
+      conditions:
+        all:
+          - field: event_type
+            operator: in
+            value: ["auth:login:fail", "auth:ssh:fail"]
+      min_count: 1
+      match_fields: []
+metadata:
+  mitre_technique: T1110.001
+  mitre_tactic: Credential Access
+  author: OSIRIS Core Security Team

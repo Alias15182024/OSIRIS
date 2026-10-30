@@ -44,6 +44,7 @@
         files: document.getElementById('view-files'),
         timeline: document.getElementById('view-timeline'),
         sessions: document.getElementById('view-sessions'),
+        detections: document.getElementById('view-detections'),
       },
 
       // Modal elements
@@ -95,6 +96,11 @@
     // Hydrate dashboard overview if authenticated
     if (window.OsirisDashboard && typeof window.OsirisDashboard.loadDashboard === 'function') {
       window.OsirisDashboard.loadDashboard();
+    }
+
+    // Hydrate detection stats badge if available
+    if (window.OsirisDetections && typeof window.OsirisDetections.updateSummaryStats === 'function') {
+      window.OsirisDetections.updateSummaryStats();
     }
   }
 
@@ -354,6 +360,11 @@
     // Load sessions data when sessions view becomes active
     if (viewName === 'sessions' && window.OsirisSessions && typeof window.OsirisSessions.loadSessions === 'function') {
       window.OsirisSessions.loadSessions();
+    }
+
+    // Load detections data when detections view becomes active
+    if (viewName === 'detections' && window.OsirisDetections && typeof window.OsirisDetections.loadDetections === 'function') {
+      window.OsirisDetections.loadDetections();
     }
   }
 

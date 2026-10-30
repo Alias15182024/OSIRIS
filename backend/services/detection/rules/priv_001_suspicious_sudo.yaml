@@ -1,0 +1,34 @@
+rule_id: OSIRIS-PRIV-001
+name: Suspicious Sudo Execution by Non-Admin
+description: Detects invocation of sudo or interactive sudo shell transitions by standard non-system users.
+category: privilege_escalation
+severity: high
+enabled: true
+version: 1
+rule_type: single_event
+explanation: Standard unprivileged users executing interactive sudo commands (sudo -i, sudo -s, sudo su, sudo /bin/bash) may indicate an unauthorized attempt to obtain persistent root privileges.
+conditions:
+  all:
+    - field: event_type
+      operator: in
+      value: ["auth:sudo", "proc:exec", "proc:start"]
+    - any:
+      - field: command
+        operator: contains
+        value: "sudo -i"
+      - field: command
+        operator: contains
+        value: "sudo -s"
+      - field: command
+        operator: contains
+        value: "sudo su"
+      - field: command
+        operator: contains
+        value: "sudo /bin/bash"
+      - field: command
+        operator: contains
+        value: "sudo /bin/sh"
+metadata:
+  mitre_technique: T1548.003
+  mitre_tactic: Privilege Escalation
+  author: OSIRIS Core Security Team

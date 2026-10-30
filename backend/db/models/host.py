@@ -12,6 +12,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.db.base import Base, new_uuid, utcnow
 
 if TYPE_CHECKING:
+    from backend.db.models.detection import Detection
     from backend.db.models.event import Event
     from backend.db.models.file import File
     from backend.db.models.linux_user import LinuxUser
@@ -65,5 +66,8 @@ class Host(Base):
         back_populates="host"
     )
     sessions: Mapped[list["UserSession"]] = relationship(
+        back_populates="host"
+    )
+    detections: Mapped[list["Detection"]] = relationship(
         back_populates="host"
     )

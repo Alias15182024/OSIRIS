@@ -1,0 +1,25 @@
+rule_id: OSIRIS-PRIV-003
+name: Sudoers Configuration Modification or Tampering
+description: Detects direct manipulation or permissive permission changes to sudoers files.
+category: privilege_escalation
+severity: critical
+enabled: true
+version: 1
+rule_type: single_event
+explanation: Any modification, editing via visudo, or permission tampering targeting /etc/sudoers or /etc/sudoers.d allows adversaries to establish permanent, unprompted root access.
+conditions:
+  all:
+    - any:
+      - field: command
+        operator: contains
+        value: "/etc/sudoers"
+      - field: object_path
+        operator: contains
+        value: "/etc/sudoers"
+      - field: command
+        operator: startswith
+        value: "visudo"
+metadata:
+  mitre_technique: T1548.003
+  mitre_tactic: Privilege Escalation
+  author: OSIRIS Core Security Team

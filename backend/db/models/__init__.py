@@ -5,6 +5,8 @@ Import all models here so Alembic autogenerate can discover them.
 
 from backend.db.models.app_audit_log import AppAuditLog
 from backend.db.models.app_user import AppUser
+from backend.db.models.detection import Detection
+from backend.db.models.detection_rule import DetectionRule
 from backend.db.models.event import Event
 from backend.db.models.file import File
 from backend.db.models.host import Host
@@ -17,6 +19,8 @@ from backend.db.models.user_session import UserSession
 __all__ = [
     "AppAuditLog",
     "AppUser",
+    "Detection",
+    "DetectionRule",
     "Event",
     "File",
     "Host",

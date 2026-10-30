@@ -352,22 +352,43 @@ the Event Processing Layer (Milestone 1.3).
 
 ---
 
-### Milestone 2.4 — Detection Engine
+### Milestone 2.4 — Detection Engine (Completed)
 
 **Goal:** Evaluate security rules against events to generate alerts.
 
-- [ ] Security rule table migration
-- [ ] Rule definition format (declarative JSON/YAML conditions)
-- [ ] Rule evaluation engine
-- [ ] Seed security rules (e.g., root process execution, sensitive file access,
-      repeated authentication failures)
-- [ ] Rule explainability (each alert references its rule and evidence)
+- [x] Security rule table migration (`0004_detections_and_rules.py`)
+- [x] Rule definition format (declarative JSON/YAML conditions with bounds and AST validator)
+- [x] Rule evaluation engine (`backend/services/detection/` with AST matcher and sliding-window temporal sequence correlator)
+- [x] Seed security rules (9 rules covering privilege escalation, authentication failures, and system reconnaissance)
+- [x] Rule explainability (each detection records evaluated AST condition branches, actual vs expected values, and forensic evidence)
+- [x] Persistent detection storage with deterministic SHA-256 deduplication and acknowledgment workflow
+- [x] Detection REST API (`GET /api/detections`, `GET /api/detections/rules`, `GET /api/detections/{id}`, `POST /api/detections/{id}/acknowledge`)
+- [x] Frontend Detections explorer, navigation badge counter, dashboard inventory metric, and inspector modal
 
 **Testing Checkpoint:**
 - Rules evaluate correctly against test events
 - Matching events produce alerts
 - Non-matching events do not produce false alerts
 - Each alert is explainable
+- Multi-event sequence correlation strictly enforces sliding time windows and host isolation
+- Deduplication prevents duplicate alerts within configured time buckets
+- All 1083 tests pass cleanly (12 skipped, 40 warnings)
+
+**Milestone 2.4 Validation Evidence:**
+- **Environment:** macOS Darwin (Apple Silicon) / Python 3.12.13
+- **Full Test Suite:** 1083 passed, 12 skipped, 40 warnings in 15.81s
+  - 9 migration tests covering SQLite and PostgreSQL reversible migrations (`tests/unit/test_migrations.py`).
+  - 14 rule definition, operator validation, regex syntax, and bound tests (`tests/unit/test_detection_rules.py`).
+  - 11 detection engine evaluation and idempotent registration tests (`tests/unit/test_detection_engine.py`).
+  - 11 temporal sequence correlation, multi-user isolation, zero-reuse, and sliding-window tests (`tests/unit/test_detection_sequence.py`).
+  - 18 initial rule catalogue validation tests with true-positive and true-negative scenarios (`tests/unit/test_initial_rules.py`).
+  - 5 detection persistence, foreign key cascading, and SHA-256 deduplication tests (`tests/unit/test_detection_persistence.py`).
+  - 10 detection REST API tests covering auth, filtering, pagination, and acknowledgment (`tests/unit/test_api_detections.py`).
+  - 10 detections frontend contract tests (`tests/unit/test_detections_view_contract.py`).
+  - 26 Phase 1.6 cross-view integration tests (`tests/unit/test_phase16_integration.py`).
+  - 12 skipped: 11 Linux integration tests and 1 SQLite CHECK constraint test.
+- **JavaScriptCore (jsc) Syntax Validation:** All 10 JavaScript controllers (including `detections.js`) cleanly validated with exit code 0.
+- **Security Boundaries Verified:** Zero `localStorage`, zero `innerHTML`, zero `eval`, zero dynamic code execution, strictly scoped host boundary isolation.
 
 ---
 
@@ -454,10 +475,10 @@ Phase 1: Observe
   1.6 Basic Web Dashboard
 
 Phase 2: Reconstruct & Detect
-  2.1 Historical Storage, Snapshots & Session Tracking
-  2.2 Timeline Reconstruction
-  2.3 Security/System Log Collector
-  2.4 Detection Engine
+  2.1 Historical Storage, Snapshots & Session Tracking  ← Completed
+  2.2 Timeline Reconstruction                           ← Completed
+  2.3 Security/System Log Collector                     ← Completed
+  2.4 Detection Engine                                  ← Completed
   2.5 File Integrity Monitoring
   2.6 Alert & Incident Management
   2.7 Investigation Interface

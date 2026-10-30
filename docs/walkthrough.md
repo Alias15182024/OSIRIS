@@ -605,3 +605,82 @@ All Milestone 2.2 components have been implemented, verified through automated u
   - All API routes and contracts verified across frontend files.
 - **Apple JavaScriptCore (`jsc`) Validation**:
   - All 9 frontend JavaScript scripts validated with zero syntax errors.
+
+---
+
+# Phase 2 Milestone 2.4: Detection Engine & Rules Foundation Walkthrough
+
+## 1. Architecture & Component Summary
+
+### 1.1 Declarative Detection Engine ([`backend/services/detection/`](file:///Users/alias/Desktop/OSIRIS/backend/services/detection/))
+- **Safe Declarative AST Matcher ([`backend/services/detection/matcher.py`](file:///Users/alias/Desktop/OSIRIS/backend/services/detection/matcher.py))**:
+  - Implements condition evaluation over telemetry events without `eval()` or `exec()`.
+  - Supports 14 comparison operators: `==`, `!=`, `>`, `<`, `>=`, `<=`, `in`, `not_in`, `contains`, `startswith`, `endswith`, `regex`, `exists`, `not_exists`.
+  - Supports recursive logical grouping nodes (`all`, `any`, `not`).
+  - Dot-notation field extractor (`extract_field_value`) safely handles nested objects and returns structured evaluation details for every leaf node.
+- **Temporal Sequence Correlator ([`backend/services/detection/sequence.py`](file:///Users/alias/Desktop/OSIRIS/backend/services/detection/sequence.py))**:
+  - Reconstructs multi-event attack sequences over sliding time windows (`window_seconds`).
+  - Enforces strict host boundary isolation: events are partitioned by `host_id` and events across distinct hosts are never correlated.
+  - Correlates multi-event stages on shared identifiers (`match_field`, e.g., `data.user`).
+  - Supports stage-specific event counts (`min_count`) and sequential transitions.
+- **Rule Validator ([`backend/services/detection/validator.py`](file:///Users/alias/Desktop/OSIRIS/backend/services/detection/validator.py))**:
+  - Parses YAML/JSON definitions with `yaml.safe_load`.
+  - Validates all field types, categories, severities, regex syntax, and structural limits (max stages, window bounds, string lengths).
+- **Rule Loader ([`backend/services/detection/rules_loader.py`](file:///Users/alias/Desktop/OSIRIS/backend/services/detection/rules_loader.py))**:
+  - Discovers and loads rule definitions from YAML files with duplicate ID detection.
+- **Detection Engine ([`backend/services/detection/engine.py`](file:///Users/alias/Desktop/OSIRIS/backend/services/detection/engine.py))**:
+  - Unifies single-event evaluation (`evaluate_event`) and batch sequence evaluation (`evaluate_batch`).
+  - Computes deterministic SHA-256 deduplication hashes over `host_id`, `rule_id`, canonical matched entities, and timestamp time buckets.
+- **Detection Service ([`backend/services/detection/service.py`](file:///Users/alias/Desktop/OSIRIS/backend/services/detection/service.py))**:
+  - Synchronizes file-based rules to the `detection_rules` table.
+  - Evaluates events and persists new detections to `detections` table, preventing duplicates using `dedup_hash`.
+  - Provides query filtering, pagination, and acknowledgment workflows.
+
+### 1.2 Initial Rules Catalogue ([`backend/services/detection/rules/`](file:///Users/alias/Desktop/OSIRIS/backend/services/detection/rules/))
+Nine production security rules:
+1. `OSIRIS-PRIV-001`: Suspicious Sudo Execution (High, Sudo shell breakout / sensitive tool execution)
+2. `OSIRIS-PRIV-002`: Privilege Binary Execution (Medium, Execution from `/tmp`, `/dev/shm`, `/var/tmp`)
+3. `OSIRIS-PRIV-003`: Sudoers File Tampering (Critical, Unauthorized modifications to `/etc/sudoers*`)
+4. `OSIRIS-AUTH-001`: Repeated Failed Logins (Medium, 5+ failed authentications within 300s window)
+5. `OSIRIS-AUTH-002`: Failed Logins Followed by Successful Login (High, 3+ failures then success within 300s)
+6. `OSIRIS-AUTH-003`: Remote SSH Root Login (High, Direct SSH login as root from external IP)
+7. `OSIRIS-RECON-001`: Rapid System Discovery (Medium, 3+ system enumeration commands in 60s)
+8. `OSIRIS-RECON-002`: User Account Enumeration (Low, Inspection of `/etc/passwd` or `/etc/shadow`)
+9. `OSIRIS-RECON-003`: Sensitive System File Inspection (Critical, Access to SSH keys or shadow credentials)
+
+### 1.3 Detection REST API ([`backend/api/routes/detections.py`](file:///Users/alias/Desktop/OSIRIS/backend/api/routes/detections.py))
+- `GET /api/detections`: Paginated retrieval with filtering (`host_id`, `rule_id`, `severity`, `status`, `start_time`, `end_time`).
+- `GET /api/detections/rules`: Rule catalog listing with optional category/severity/is_active filters.
+- `GET /api/detections/rules/{rule_id}`: Single rule definition lookup.
+- `GET /api/detections/{detection_id}`: Single detection lookup with explainability conditions tree and forensic evidence.
+- `POST /api/detections/{detection_id}/acknowledge`: Analyst acknowledgment workflow recording timestamp and username.
+
+### 1.4 Frontend Integration ([`frontend/static/js/views/detections.js`](file:///Users/alias/Desktop/OSIRIS/frontend/static/js/views/detections.js))
+- Navigation tab with live alert count badge.
+- Dashboard inventory counter (`invDetectionsCount`).
+- Responsive detections data table with severity badges, status indicators, and time sorting.
+- Interactive filter controls (Severity, Status, Rule ID).
+- Detection Inspector Modal displaying rule metadata, MITRE techniques, explainability AST tree, raw forensic evidence, and one-click Acknowledge button.
+- Strict security adherence: zero `innerHTML`, zero `localStorage`, zero `eval`, 100% textContent/createElement. Validated cleanly in JavaScriptCore.
+
+---
+
+## 2. Test Verification & Results
+
+### 2.1 Full Workspace Pytest Results
+```text
+================ 1083 passed, 12 skipped, 40 warnings in 15.81s ================
+```
+
+### 2.2 Milestone 2.4 Targeted Test Suites
+- **`tests/unit/test_migrations.py` (9 passed)**: Reversible migration 0004_detections_and_rules across SQLite and PostgreSQL, full up/down cycle verification.
+- **`tests/unit/test_detection_rules.py` (14 passed)**: Rule models, YAML validation, operator validation, duplicate rules, invalid regex syntax, invalid schemas.
+- **`tests/unit/test_detection_engine.py` (11 passed)**: Single-event AST evaluation, nested boolean logic (`all`/`any`/`not`), boolean type safety, explainability detail generation, idempotent rule registration.
+- **`tests/unit/test_detection_sequence.py` (11 passed)**: Multi-stage sequence correlation, sliding time window expiration, host boundary isolation, match field correlation, multi-user attacker isolation, zero event reuse across stages, deterministic timestamp ordering.
+- **`tests/unit/test_initial_rules.py` (18 passed)**: True-positive matching and true-negative non-matching tests for all 9 initial detection rules, including non-enumeration benign command isolation (`which`, `wc`, `wget`, `watch`).
+- **`tests/unit/test_detection_persistence.py` (5 passed)**: Persistence service, rule synchronization, duplicate prevention via SHA-256 dedup_hash, acknowledgment state machine, foreign key cascades.
+- **`tests/unit/test_api_detections.py` (10 passed)**: REST API auth enforcement, query filters, pagination, single detection inspection, acknowledge endpoint, OpenAPI route registration.
+- **`tests/unit/test_detections_view_contract.py` (10 passed)**: Frontend contract tests verifying HTML structure, modal elements, table selectors, security hygiene (zero innerHTML/localStorage/eval), and JavaScriptCore syntax execution.
+- **`tests/unit/test_phase16_integration.py` (26 passed)**: Cross-view API integration and route consistency.
+- **Apple JavaScriptCore (`jsc`) Validation**: All 10 frontend JavaScript files validated with 0 syntax errors.
+

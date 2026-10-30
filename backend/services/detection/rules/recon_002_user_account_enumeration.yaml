@@ -1,0 +1,34 @@
+rule_id: OSIRIS-RECON-002
+name: User Account and Group Enumeration
+description: Detects command-line enumeration of system accounts, logged-in sessions, or authentication history by non-root users.
+category: reconnaissance
+severity: low
+enabled: true
+version: 1
+rule_type: single_event
+explanation: Execution of enumeration commands (lastlog, w, who, getent passwd, cat /etc/passwd) by unprivileged users suggests reconnaissance of account access and activity patterns.
+conditions:
+  all:
+    - field: event_type
+      operator: in
+      value: ["proc:exec", "proc:start"]
+    - any:
+      - field: command
+        operator: contains
+        value: "/etc/passwd"
+      - field: command
+        operator: startswith
+        value: "getent passwd"
+      - field: command
+        operator: startswith
+        value: "lastlog"
+      - field: command
+        operator: regex
+        value: "^(?:/usr/bin/|/bin/)?w(\\s.*)?$"
+      - field: command
+        operator: regex
+        value: "^(?:/usr/bin/|/bin/)?who(\\s.*)?$"
+metadata:
+  mitre_technique: T1087.001
+  mitre_tactic: Discovery
+  author: OSIRIS Core Security Team

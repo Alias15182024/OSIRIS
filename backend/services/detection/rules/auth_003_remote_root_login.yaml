@@ -1,0 +1,23 @@
+rule_id: OSIRIS-AUTH-003
+name: Direct Remote Root Login Observed
+description: Detects successful remote SSH or login authentication directly as root.
+category: suspicious_authentication
+severity: high
+enabled: true
+version: 1
+rule_type: single_event
+explanation: Direct remote login as the root superuser bypasses individual attribution and violates basic security posture. It often indicates compromised credentials or insecure administrative configurations.
+conditions:
+  all:
+    - field: event_type
+      operator: in
+      value: ["auth:login:success", "auth:ssh:success"]
+    - field: username
+      operator: "=="
+      value: "root"
+    - field: payload.remote_host
+      operator: exists
+metadata:
+  mitre_technique: T1078.001
+  mitre_tactic: Initial Access
+  author: OSIRIS Core Security Team

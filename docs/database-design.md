@@ -297,39 +297,62 @@ Query optimization and indexing analysis confirmed that existing compound indexe
 
 Database `UNION ALL` subqueries push down filtering (`host_id`, `start_time`, `end_time`, `event_type`), pagination (`LIMIT`, `OFFSET`), and deterministic ordering (`timestamp ASC, source_id ASC`) directly to the PostgreSQL/SQLite query planner, avoiding full-table scans and eliminating in-memory buffering of large historical datasets.
 
-### 3.9 Security Rule (Phase 2)
+### 3.9 Detection Rule (Phase 2 — Milestone 2.4)
+
+Declarative security detection rules evaluated by the OSIRIS Detection Engine. Rules support single-event AST evaluation (`condition`) or multi-event temporal correlation (`sequence`).
 
 ```
-security_rules
-├── id              UUID        PRIMARY KEY
-├── name            VARCHAR     NOT NULL UNIQUE
-├── description     TEXT
-├── rule_type       VARCHAR     NOT NULL
-├── condition       JSONB       NOT NULL
-├── severity        VARCHAR     NOT NULL
-├── enabled         BOOLEAN     NOT NULL DEFAULT TRUE
-├── created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-└── updated_at      TIMESTAMPTZ
+detection_rules
+├── id                   VARCHAR(64)  PRIMARY KEY (e.g., 'OSIRIS-PRIV-001')
+├── name                 VARCHAR(128) NOT NULL
+├── description          TEXT         NOT NULL
+├── severity             VARCHAR(16)  NOT NULL  (CHECK: critical, high, medium, low, info)
+├── category             VARCHAR(32)  NOT NULL  (CHECK: privilege_escalation, authentication, reconnaissance,
+│                                               persistence, execution, credential_access, defense_evasion,
+│                                               lateral_movement, exfiltration, impact)
+├── mitre_attack         VARCHAR(64)  NULLABLE  (e.g., 'T1548.003')
+├── condition            JSON / JSONB NOT NULL  (Declarative boolean AST)
+├── sequence             JSON / JSONB NULLABLE  (Temporal multi-stage correlation definition)
+├── dedup_window_seconds INTEGER      NOT NULL DEFAULT 300
+├── is_active            BOOLEAN      NOT NULL DEFAULT TRUE
+├── created_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+└── updated_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+
+INDEX ix_detection_rules_category (category)
+INDEX ix_detection_rules_severity (severity)
+INDEX ix_detection_rules_is_active (is_active)
 ```
 
-### 3.10 Alert (Phase 2)
+### 3.10 Detection (Phase 2 — Milestone 2.4)
+
+Atomic security findings generated when telemetry events match a `detection_rule`. Includes full explainability trees (`matched_conditions`), forensic evidence payloads (`evidence`), and deterministic SHA-256 deduplication. In Milestone 2.6, detections serve as the alert feed for incident grouping.
 
 ```
-alerts
-├── id              UUID        PRIMARY KEY
-├── rule_id         UUID        FK → security_rules.id
-├── event_id        UUID        FK → events.id
-├── host_id         UUID        FK → hosts.id
-├── timestamp       TIMESTAMPTZ NOT NULL
-├── severity        VARCHAR     NOT NULL
-├── title           VARCHAR     NOT NULL
-├── description     TEXT
-├── status          VARCHAR     NOT NULL DEFAULT 'open'
-├── incident_id     UUID        FK → incidents.id  (NULLABLE)
-└── created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-INDEX (status)
-INDEX (severity)
-INDEX (timestamp)
+detections
+├── id                   UUID         PRIMARY KEY
+├── rule_id              VARCHAR(64)  NOT NULL FK → detection_rules.id (ON DELETE RESTRICT)
+├── host_id              UUID         NOT NULL FK → hosts.id (ON DELETE CASCADE)
+├── event_id             UUID         NULLABLE FK → events.id (ON DELETE SET NULL)
+├── timestamp            TIMESTAMPTZ  NOT NULL
+├── severity             VARCHAR(16)  NOT NULL  (CHECK: critical, high, medium, low, info)
+├── title                VARCHAR(256) NOT NULL
+├── description          TEXT         NOT NULL
+├── matched_conditions   JSON / JSONB NOT NULL  (Explainability tree detailing field comparisons)
+├── evidence             JSON / JSONB NOT NULL  (Forensic context: cmdline, users, paths, session IDs)
+├── dedup_hash           VARCHAR(64)  NOT NULL UNIQUE (SHA-256 deterministic deduplication)
+├── status               VARCHAR(16)  NOT NULL DEFAULT 'new' (CHECK: new, acknowledged, resolved, false_positive)
+├── acknowledged_at      TIMESTAMPTZ  NULLABLE
+├── acknowledged_by      VARCHAR(64)  NULLABLE
+└── created_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+
+INDEX ix_detections_host_id (host_id)
+INDEX ix_detections_rule_id (rule_id)
+INDEX ix_detections_timestamp (timestamp)
+INDEX ix_detections_severity (severity)
+INDEX ix_detections_status (status)
+INDEX ix_detections_host_timestamp (host_id, timestamp)
+INDEX ix_detections_rule_timestamp (rule_id, timestamp)
+UNIQUE INDEX ix_detections_dedup_hash (dedup_hash)
 ```
 
 ### 3.11 Incident (Phase 2)

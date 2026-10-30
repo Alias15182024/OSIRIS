@@ -1,0 +1,31 @@
+rule_id: OSIRIS-PRIV-002
+name: Unexpected Privilege Boundary Binary Execution
+description: Detects execution of privileged or setuid transition binaries such as pkexec or su by non-root users.
+category: privilege_escalation
+severity: medium
+enabled: true
+version: 1
+rule_type: single_event
+explanation: Execution of setuid or privilege-transition binaries like pkexec or su by non-root users outside standard system jobs can indicate privilege escalation or exploitation.
+conditions:
+  all:
+    - field: event_type
+      operator: in
+      value: ["proc:exec", "proc:start", "auth:su"]
+    - any:
+      - field: command
+        operator: startswith
+        value: "pkexec"
+      - field: command
+        operator: contains
+        value: "/usr/bin/pkexec"
+      - field: command
+        operator: startswith
+        value: "su -"
+      - field: command
+        operator: startswith
+        value: "su root"
+metadata:
+  mitre_technique: T1548.001
+  mitre_tactic: Privilege Escalation
+  author: OSIRIS Core Security Team

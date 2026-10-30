@@ -78,6 +78,13 @@
             <span class="nav-label">Sessions</span>
           </button>
         </li>
+        <li class="nav-item">
+          <button id="nav-detections" class="nav-link" type="button" data-view="detections">
+            <span class="nav-icon" aria-hidden="true">&#x1F6A8;</span>
+            <span class="nav-label">Detections</span>
+            <span id="nav-detections-badge" class="badge badge-danger hidden">0</span>
+          </button>
+        </li>
       </ul>
     </nav>
 
@@ -177,6 +184,10 @@
                 <div class="inventory-counter-card">
                   <span class="counter-label">Observed Files</span>
                   <span id="inv-files-count" class="counter-value">--</span>
+                </div>
+                <div class="inventory-counter-card">
+                  <span class="counter-label">Open Alerts</span>
+                  <span id="inv-detections-count" class="counter-value">--</span>
                 </div>
               </div>
             </div>
@@ -836,6 +847,138 @@
         </div>
       </section>
 
+      <!-- View 8: Security Detections & Alerts -->
+      <section id="view-detections" class="view-panel hidden" aria-labelledby="heading-detections">
+        <div class="view-header">
+          <div class="view-header-main">
+            <h2 id="heading-detections" class="view-title">Security Detections &amp; Alerts</h2>
+            <span class="view-subtitle">Real-time declarative detection engine observations</span>
+          </div>
+          <div class="view-actions">
+            <button id="detections-refresh-btn" class="btn btn-outline btn-sm" type="button" aria-label="Refresh Detections">Refresh</button>
+            <span id="detections-refresh-time" class="timestamp-label"></span>
+          </div>
+        </div>
+
+        <!-- Severity Summary Cards -->
+        <div class="stats-grid mb-4">
+          <div class="stat-card stat-critical">
+            <span class="stat-label">Critical Alerts</span>
+            <span id="detection-stat-critical" class="stat-value">0</span>
+          </div>
+          <div class="stat-card stat-high">
+            <span class="stat-label">High Alerts</span>
+            <span id="detection-stat-high" class="stat-value">0</span>
+          </div>
+          <div class="stat-card stat-medium">
+            <span class="stat-label">Medium Alerts</span>
+            <span id="detection-stat-medium" class="stat-value">0</span>
+          </div>
+          <div class="stat-card stat-low">
+            <span class="stat-label">Low / Info Alerts</span>
+            <span id="detection-stat-low" class="stat-value">0</span>
+          </div>
+        </div>
+
+        <!-- Filter Controls -->
+        <div class="card filter-card">
+          <form id="detections-filter-form" class="filter-form" novalidate>
+            <div class="filter-row">
+              <div class="form-group">
+                <label for="filter-detection-host-id" class="form-label">Host ID</label>
+                <input id="filter-detection-host-id" class="form-input" type="text" placeholder="Filter by Host UUID...">
+              </div>
+              <div class="form-group">
+                <label for="filter-detection-severity" class="form-label">Severity</label>
+                <select id="filter-detection-severity" class="form-select">
+                  <option value="">All Severities</option>
+                  <option value="critical">Critical</option>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                  <option value="info">Info</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="filter-detection-category" class="form-label">Category</label>
+                <select id="filter-detection-category" class="form-select">
+                  <option value="">All Categories</option>
+                  <option value="privilege_escalation">Privilege Escalation</option>
+                  <option value="suspicious_authentication">Suspicious Authentication</option>
+                  <option value="reconnaissance">Reconnaissance</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="filter-detection-status" class="form-label">Status</label>
+                <select id="filter-detection-status" class="form-select">
+                  <option value="">All Statuses</option>
+                  <option value="open">Open</option>
+                  <option value="acknowledged">Acknowledged</option>
+                  <option value="resolved">Resolved</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="filter-detection-rule-id" class="form-label">Rule ID</label>
+                <input id="filter-detection-rule-id" class="form-input" type="text" placeholder="e.g. OSIRIS-PRIV-001">
+              </div>
+              <div class="filter-actions">
+                <button id="detections-filter-apply-btn" class="btn btn-primary btn-sm" type="submit">Apply</button>
+                <button id="detections-filter-reset-btn" class="btn btn-outline btn-sm" type="button">Reset</button>
+              </div>
+            </div>
+          </form>
+        </div>
+
+        <!-- Detections Table Card -->
+        <div class="card table-card">
+          <div class="card-header">
+            <span class="card-title">Security Alert Records</span>
+            <span id="detections-total-badge" class="badge badge-secondary">0 Alerts</span>
+          </div>
+
+          <!-- Loading State -->
+          <div id="detections-loading" class="table-loading hidden">
+            <div class="spinner-sm" aria-hidden="true"></div>
+            <span>Evaluating and fetching detections...</span>
+          </div>
+
+          <!-- Empty State -->
+          <div id="detections-empty-state" class="empty-state hidden">
+            <span class="empty-icon" aria-hidden="true">&#x1F6E1;</span>
+            <p class="empty-text">No security detections found matching the selected filters.</p>
+          </div>
+
+          <!-- Error State -->
+          <div id="detections-error" class="alert-box alert-error hidden" role="alert"></div>
+
+          <!-- Table -->
+          <div class="table-responsive">
+            <table id="detections-table" class="data-table">
+              <thead>
+                <tr>
+                  <th scope="col">Timestamp (UTC)</th>
+                  <th scope="col">Severity</th>
+                  <th scope="col">Title &amp; Rule</th>
+                  <th scope="col">Category</th>
+                  <th scope="col">Host</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="detections-tbody">
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Pagination -->
+          <div class="pagination-bar">
+            <button id="detections-prev-btn" class="btn btn-outline btn-sm" type="button" disabled>&larr; Previous</button>
+            <span id="detections-page-info" class="pagination-info">Page 1 of 1</span>
+            <button id="detections-next-btn" class="btn btn-outline btn-sm" type="button" disabled>Next &rarr;</button>
+          </div>
+        </div>
+      </section>
+
     </main>
 
     <!-- Login Modal Placeholder / Container -->
@@ -995,6 +1138,77 @@
       </div>
     </div>
 
+    <!-- Detection Detail Modal -->
+    <div id="detection-detail-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="detection-modal-title">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-header">
+          <h3 id="detection-modal-title" class="modal-title">Detection Alert Inspector</h3>
+          <button id="detection-modal-close" class="modal-close-btn" type="button" aria-label="Close modal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="detail-grid">
+            <div class="detail-item">
+              <span class="detail-label">Title:</span>
+              <span id="detail-detection-title" class="detail-val font-bold"></span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Rule Code:</span>
+              <span id="detail-detection-rule-code" class="detail-val font-mono"></span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Severity:</span>
+              <span id="detail-detection-severity" class="detail-val"></span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Status:</span>
+              <span id="detail-detection-status" class="detail-val"></span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Category:</span>
+              <span id="detail-detection-category" class="detail-val"></span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Detected At:</span>
+              <span id="detail-detection-timestamp" class="detail-val font-mono"></span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Host:</span>
+              <span id="detail-detection-host" class="detail-val font-mono"></span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Deduplication Hash:</span>
+              <span id="detail-detection-dedup" class="detail-val font-mono"></span>
+            </div>
+          </div>
+
+          <div class="modal-section mt-4">
+            <h4 class="section-subtitle">Forensic Explanation &amp; Rationale</h4>
+            <div id="detail-detection-description" class="explanation-box"></div>
+          </div>
+
+          <div class="modal-section mt-4">
+            <h4 class="section-subtitle">Matched Rule Conditions (Explainability)</h4>
+            <div id="detail-detection-conditions" class="conditions-box"></div>
+          </div>
+
+          <div class="modal-section mt-4">
+            <h4 class="section-subtitle">Correlated Evidence</h4>
+            <pre id="detail-detection-evidence" class="evidence-pre font-mono"></pre>
+          </div>
+
+          <div class="modal-section mt-4 border-t pt-4">
+            <div id="detection-ack-region" class="ack-region">
+              <div class="form-group">
+                <label for="detection-ack-notes" class="form-label">Investigation / Acknowledgment Notes</label>
+                <input id="detection-ack-notes" class="form-input" type="text" placeholder="Optional notes for audit trail...">
+              </div>
+              <button id="detection-ack-btn" class="btn btn-warning btn-sm" type="button">Acknowledge Alert</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Global Loading Indicator Shell -->
     <div id="global-loading-indicator" class="loading-overlay hidden" aria-live="assertive" aria-label="Loading content">
       <div class="spinner" aria-hidden="true"></div>
@@ -1019,6 +1233,7 @@
   <script src="/static/js/views/files.js" defer></script>
   <script src="/static/js/views/timeline.js" defer></script>
   <script src="/static/js/views/sessions.js" defer></script>
+  <script src="/static/js/views/detections.js" defer></script>
   <script src="/static/js/app.js" defer></script>
 </body>
 </html>

@@ -1,0 +1,34 @@
+rule_id: OSIRIS-RECON-003
+name: Sensitive Credential and System File Inspection
+description: Detects process access or file operations targeting sensitive credential databases and private keys.
+category: reconnaissance
+severity: critical
+enabled: true
+version: 1
+rule_type: single_event
+explanation: Reading or attempting to access /etc/shadow, /etc/gshadow, /root/.ssh, or private keys by non-system processes strongly indicates active credential harvesting.
+conditions:
+  all:
+    - any:
+      - field: object_path
+        operator: contains
+        value: "/etc/shadow"
+      - field: object_path
+        operator: contains
+        value: "/etc/gshadow"
+      - field: object_path
+        operator: contains
+        value: "id_rsa"
+      - field: object_path
+        operator: contains
+        value: "id_ed25519"
+      - field: command
+        operator: contains
+        value: "/etc/shadow"
+      - field: command
+        operator: contains
+        value: "/etc/gshadow"
+metadata:
+  mitre_technique: T1003.008
+  mitre_tactic: Credential Access
+  author: OSIRIS Core Security Team

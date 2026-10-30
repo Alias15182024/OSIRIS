@@ -1,0 +1,32 @@
+rule_id: OSIRIS-AUTH-002
+name: Failed Logins Followed by Successful Authentication
+description: Detects repeated authentication failures followed by a successful login for the same user account.
+category: suspicious_authentication
+severity: high
+enabled: true
+version: 1
+rule_type: sequence
+explanation: Repeated authentication failures immediately followed by a successful authentication for the same target username is a high-confidence indicator of password spraying or successful brute-force access.
+sequence:
+  time_window_seconds: 300
+  stages:
+    - stage_id: failed_attempts
+      conditions:
+        all:
+          - field: event_type
+            operator: in
+            value: ["auth:login:fail", "auth:ssh:fail"]
+      min_count: 2
+      match_fields: ["username"]
+    - stage_id: successful_login
+      conditions:
+        all:
+          - field: event_type
+            operator: in
+            value: ["auth:login:success", "auth:ssh:success"]
+      min_count: 1
+      match_fields: ["username"]
+metadata:
+  mitre_technique: T1110.001
+  mitre_tactic: Credential Access
+  author: OSIRIS Core Security Team
