@@ -14,6 +14,7 @@ from backend.db.base import Base, new_uuid, utcnow
 if TYPE_CHECKING:
     from backend.db.models.host import Host
     from backend.db.models.process import Process
+    from backend.db.models.user_session import UserSession
 
 
 class LinuxUser(Base):
@@ -53,5 +54,8 @@ class LinuxUser(Base):
     # Relationships
     host: Mapped["Host"] = relationship(back_populates="linux_users")
     processes: Mapped[list["Process"]] = relationship(
+        back_populates="linux_user"
+    )
+    sessions: Mapped[list["UserSession"]] = relationship(
         back_populates="linux_user"
     )

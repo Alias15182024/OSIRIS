@@ -29,6 +29,8 @@ from backend.db.models.host import Host
 from backend.db.models.linux_user import LinuxUser
 from backend.db.models.process import Process
 from backend.db.models.resource_snapshot import ResourceSnapshot
+from backend.db.models.snapshot import Snapshot
+from backend.db.models.user_session import UserSession
 
 
 def utcnow() -> datetime:
@@ -57,6 +59,15 @@ class TestTableCreation:
             "app_users",
             "app_audit_log",
         }
+        assert expected.issubset(tables), (
+            f"Missing tables: {expected - tables}"
+        )
+
+    def test_phase2_tables_created(self, db_engine):  # type: ignore[no-untyped-def]
+        """Phase 2 Milestone 2.1 tables must be present."""
+        inspector = inspect(db_engine)
+        tables = set(inspector.get_table_names())
+        expected = {"snapshots", "sessions"}
         assert expected.issubset(tables), (
             f"Missing tables: {expected - tables}"
         )
@@ -847,3 +858,399 @@ class TestRelationships:
         db_session.flush()
         db_session.refresh(sample_app_user)
         assert len(sample_app_user.audit_logs) == 2
+
+    def test_host_has_many_snapshots(
+        self, db_session: Session, sample_host: Host
+    ) -> None:
+        now = utcnow()
+        s1 = Snapshot(
+            host_id=sample_host.id,
+            timestamp=now,
+            snapshot_type="system",
+            data={"test": 1},
+            created_at=now,
+        )
+        s2 = Snapshot(
+            host_id=sample_host.id,
+            timestamp=now,
+            snapshot_type="process",
+            data={"test": 2},
+            created_at=now,
+        )
+        db_session.add_all([s1, s2])
+        db_session.flush()
+        db_session.refresh(sample_host)
+        assert len(sample_host.snapshots) == 2
+        assert s1.host is sample_host
+
+    def test_host_has_many_sessions(
+        self,
+        db_session: Session,
+        sample_host: Host,
+        sample_linux_users: dict,
+    ) -> None:
+        root = sample_linux_users["root"]
+        now = utcnow()
+        sess1 = UserSession(
+            host_id=sample_host.id,
+            linux_user_id=root.id,
+            session_type="tty",
+            terminal="tty1",
+            started_at=now,
+            created_at=now,
+        )
+        sess2 = UserSession(
+            host_id=sample_host.id,
+            linux_user_id=None,
+            session_type="ssh",
+            terminal="pts/0",
+            remote_host="10.0.0.99",
+            started_at=now,
+            created_at=now,
+        )
+        db_session.add_all([sess1, sess2])
+        db_session.flush()
+        db_session.refresh(sample_host)
+        assert len(sample_host.sessions) == 2
+        assert sess1.host is sample_host
+
+    def test_linux_user_has_many_sessions(
+        self,
+        db_session: Session,
+        sample_host: Host,
+        sample_linux_users: dict,
+    ) -> None:
+        root = sample_linux_users["root"]
+        now = utcnow()
+        sess1 = UserSession(
+            host_id=sample_host.id,
+            linux_user_id=root.id,
+            session_type="ssh",
+            terminal="pts/1",
+            started_at=now,
+            created_at=now,
+        )
+        sess2 = UserSession(
+            host_id=sample_host.id,
+            linux_user_id=root.id,
+            session_type="pts",
+            terminal="pts/2",
+            started_at=now,
+            created_at=now,
+        )
+        db_session.add_all([sess1, sess2])
+        db_session.flush()
+        db_session.refresh(root)
+        assert len(root.sessions) >= 2
+        assert sess1.linux_user is root
+
+
+# ========================================================================
+# SNAPSHOT TESTS (PHASE 2 MILESTONE 2.1)
+# ========================================================================
+
+
+class TestSnapshot:
+    """Tests for the snapshots table."""
+
+    def test_create_snapshot(
+        self, db_session: Session, sample_host: Host
+    ) -> None:
+        now = utcnow()
+        payload = {"system": {"load": [0.1, 0.2, 0.3]}, "meta": {"version": 1}}
+        snapshot = Snapshot(
+            host_id=sample_host.id,
+            timestamp=now,
+            snapshot_type="system",
+            data=payload,
+            created_at=now,
+        )
+        db_session.add(snapshot)
+        db_session.flush()
+
+        assert snapshot.id is not None
+        assert snapshot.host_id == sample_host.id
+        assert snapshot.snapshot_type == "system"
+        assert snapshot.data == payload
+        assert snapshot.timestamp == now
+        assert snapshot.created_at is not None
+
+    def test_snapshot_host_id_required(
+        self, db_session: Session
+    ) -> None:
+        now = utcnow()
+        snapshot = Snapshot(
+            host_id=None,  # type: ignore[arg-type]
+            timestamp=now,
+            snapshot_type="system",
+            data={"test": True},
+            created_at=now,
+        )
+        db_session.add(snapshot)
+        with pytest.raises(IntegrityError):
+            db_session.flush()
+
+    def test_snapshot_timestamp_required(
+        self, db_session: Session, sample_host: Host
+    ) -> None:
+        snapshot = Snapshot(
+            host_id=sample_host.id,
+            timestamp=None,  # type: ignore[arg-type]
+            snapshot_type="system",
+            data={"test": True},
+            created_at=utcnow(),
+        )
+        db_session.add(snapshot)
+        with pytest.raises(IntegrityError):
+            db_session.flush()
+
+    def test_snapshot_type_required(
+        self, db_session: Session, sample_host: Host
+    ) -> None:
+        snapshot = Snapshot(
+            host_id=sample_host.id,
+            timestamp=utcnow(),
+            snapshot_type=None,  # type: ignore[arg-type]
+            data={"test": True},
+            created_at=utcnow(),
+        )
+        db_session.add(snapshot)
+        with pytest.raises(IntegrityError):
+            db_session.flush()
+
+    def test_snapshot_data_required(
+        self, db_session: Session, sample_host: Host
+    ) -> None:
+        snapshot = Snapshot(
+            host_id=sample_host.id,
+            timestamp=utcnow(),
+            snapshot_type="system",
+            data=None,  # type: ignore[arg-type]
+            created_at=utcnow(),
+        )
+        db_session.add(snapshot)
+        with pytest.raises(IntegrityError):
+            db_session.flush()
+
+    def test_snapshot_json_data_storage(
+        self, db_session: Session, sample_host: Host
+    ) -> None:
+        now = utcnow()
+        complex_data = {
+            "processes": [
+                {"pid": 1, "name": "systemd"},
+                {"pid": 2, "name": "kthreadd"},
+            ],
+            "metrics": {
+                "cpu_total": 4,
+                "memory_free_bytes": 1073741824,
+            },
+            "flags": [True, False, None],
+        }
+        snapshot = Snapshot(
+            host_id=sample_host.id,
+            timestamp=now,
+            snapshot_type="full_state",
+            data=complex_data,
+        )
+        db_session.add(snapshot)
+        db_session.flush()
+        db_session.expire(snapshot)
+
+        fetched = db_session.get(Snapshot, snapshot.id)
+        assert fetched is not None
+        assert fetched.data["processes"][0]["name"] == "systemd"
+        assert fetched.data["metrics"]["cpu_total"] == 4
+        assert fetched.data["flags"] == [True, False, None]
+
+    def test_snapshot_foreign_key_violation(
+        self, db_session: Session
+    ) -> None:
+        non_existent_host_id = uuid.uuid4()
+        snapshot = Snapshot(
+            host_id=non_existent_host_id,
+            timestamp=utcnow(),
+            snapshot_type="system",
+            data={"test": 1},
+        )
+        db_session.add(snapshot)
+        with pytest.raises(IntegrityError):
+            db_session.flush()
+
+    def test_snapshot_empty_dict_data_allowed(
+        self, db_session: Session, sample_host: Host
+    ) -> None:
+        now = utcnow()
+        snapshot = Snapshot(
+            host_id=sample_host.id,
+            timestamp=now,
+            snapshot_type="empty_state",
+            data={},
+        )
+        db_session.add(snapshot)
+        db_session.flush()
+        db_session.expire(snapshot)
+
+        fetched = db_session.get(Snapshot, snapshot.id)
+        assert fetched is not None
+        assert fetched.data == {}
+
+    def test_snapshot_list_data_storage(
+        self, db_session: Session, sample_host: Host
+    ) -> None:
+        now = utcnow()
+        list_data = [{"pid": 1, "cmd": "init"}, {"pid": 2, "cmd": "kworker"}]
+        snapshot = Snapshot(
+            host_id=sample_host.id,
+            timestamp=now,
+            snapshot_type="proc_list",
+            data=list_data,
+        )
+        db_session.add(snapshot)
+        db_session.flush()
+        db_session.expire(snapshot)
+
+        fetched = db_session.get(Snapshot, snapshot.id)
+        assert fetched is not None
+        assert fetched.data == list_data
+
+
+# ========================================================================
+# USER SESSION TESTS (PHASE 2 MILESTONE 2.1)
+# ========================================================================
+
+
+class TestUserSession:
+    """Tests for the sessions table."""
+
+    def test_create_session(
+        self,
+        db_session: Session,
+        sample_host: Host,
+        sample_linux_users: dict,
+    ) -> None:
+        root = sample_linux_users["root"]
+        started = utcnow()
+        ended = utcnow()
+        session = UserSession(
+            host_id=sample_host.id,
+            linux_user_id=root.id,
+            session_type="ssh",
+            terminal="pts/3",
+            remote_host="192.168.1.120",
+            started_at=started,
+            ended_at=ended,
+            created_at=started,
+        )
+        db_session.add(session)
+        db_session.flush()
+
+        assert session.id is not None
+        assert session.host_id == sample_host.id
+        assert session.linux_user_id == root.id
+        assert session.session_type == "ssh"
+        assert session.terminal == "pts/3"
+        assert session.remote_host == "192.168.1.120"
+        assert session.started_at == started
+        assert session.ended_at == ended
+        assert session.created_at is not None
+
+    def test_create_session_with_null_user(
+        self, db_session: Session, sample_host: Host
+    ) -> None:
+        started = utcnow()
+        session = UserSession(
+            host_id=sample_host.id,
+            linux_user_id=None,
+            session_type=None,
+            terminal=None,
+            remote_host=None,
+            started_at=started,
+            ended_at=None,
+        )
+        db_session.add(session)
+        db_session.flush()
+
+        assert session.id is not None
+        assert session.linux_user_id is None
+        assert session.session_type is None
+        assert session.terminal is None
+        assert session.remote_host is None
+        assert session.ended_at is None
+        assert session.created_at is not None
+
+    def test_session_host_id_required(
+        self, db_session: Session
+    ) -> None:
+        session = UserSession(
+            host_id=None,  # type: ignore[arg-type]
+            started_at=utcnow(),
+        )
+        db_session.add(session)
+        with pytest.raises(IntegrityError):
+            db_session.flush()
+
+    def test_session_started_at_required(
+        self, db_session: Session, sample_host: Host
+    ) -> None:
+        session = UserSession(
+            host_id=sample_host.id,
+            started_at=None,  # type: ignore[arg-type]
+        )
+        db_session.add(session)
+        with pytest.raises(IntegrityError):
+            db_session.flush()
+
+    def test_session_foreign_key_host_violation(
+        self, db_session: Session
+    ) -> None:
+        non_existent_host_id = uuid.uuid4()
+        session = UserSession(
+            host_id=non_existent_host_id,
+            started_at=utcnow(),
+        )
+        db_session.add(session)
+        with pytest.raises(IntegrityError):
+            db_session.flush()
+
+    def test_session_foreign_key_linux_user_violation(
+        self, db_session: Session, sample_host: Host
+    ) -> None:
+        non_existent_user_id = uuid.uuid4()
+        session = UserSession(
+            host_id=sample_host.id,
+            linux_user_id=non_existent_user_id,
+            started_at=utcnow(),
+        )
+        db_session.add(session)
+        with pytest.raises(IntegrityError):
+            db_session.flush()
+
+    def test_session_deletion_removes_from_host_and_user(
+        self,
+        db_session: Session,
+        sample_host: Host,
+        sample_linux_users: dict,
+    ) -> None:
+        root = sample_linux_users["root"]
+        now = utcnow()
+        session = UserSession(
+            host_id=sample_host.id,
+            linux_user_id=root.id,
+            session_type="console",
+            terminal="tty2",
+            started_at=now,
+        )
+        db_session.add(session)
+        db_session.flush()
+        db_session.refresh(sample_host)
+        db_session.refresh(root)
+        assert session in sample_host.sessions
+        assert session in root.sessions
+
+        db_session.delete(session)
+        db_session.flush()
+        db_session.refresh(sample_host)
+        db_session.refresh(root)
+        assert session not in sample_host.sessions
+        assert session not in root.sessions

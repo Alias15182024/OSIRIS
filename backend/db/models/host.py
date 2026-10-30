@@ -17,6 +17,8 @@ if TYPE_CHECKING:
     from backend.db.models.linux_user import LinuxUser
     from backend.db.models.process import Process
     from backend.db.models.resource_snapshot import ResourceSnapshot
+    from backend.db.models.snapshot import Snapshot
+    from backend.db.models.user_session import UserSession
 
 
 class Host(Base):
@@ -57,5 +59,11 @@ class Host(Base):
         back_populates="host"
     )
     events: Mapped[list["Event"]] = relationship(
+        back_populates="host"
+    )
+    snapshots: Mapped[list["Snapshot"]] = relationship(
+        back_populates="host"
+    )
+    sessions: Mapped[list["UserSession"]] = relationship(
         back_populates="host"
     )

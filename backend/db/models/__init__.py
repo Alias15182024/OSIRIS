@@ -1,4 +1,4 @@
-"""OSIRIS database models — Phase 1.
+"""OSIRIS database models — Phase 1 & Phase 2.
 
 Import all models here so Alembic autogenerate can discover them.
 """
@@ -11,6 +11,8 @@ from backend.db.models.host import Host
 from backend.db.models.linux_user import LinuxUser
 from backend.db.models.process import Process
 from backend.db.models.resource_snapshot import ResourceSnapshot
+from backend.db.models.snapshot import Snapshot
+from backend.db.models.user_session import UserSession
 
 __all__ = [
     "AppAuditLog",
@@ -21,4 +23,6 @@ __all__ = [
     "LinuxUser",
     "Process",
     "ResourceSnapshot",
+    "Snapshot",
+    "UserSession",
 ]

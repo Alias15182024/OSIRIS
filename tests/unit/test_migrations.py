@@ -55,6 +55,39 @@ _files_table = sa.table(
     sa.column("created_at", sa.DateTime(timezone=True)),
 )
 
+_linux_users_table = sa.table(
+    "linux_users",
+    sa.column("id", sa.Uuid),
+    sa.column("host_id", sa.Uuid),
+    sa.column("uid", sa.Integer),
+    sa.column("username", sa.String),
+    sa.column("first_seen_at", sa.DateTime(timezone=True)),
+    sa.column("created_at", sa.DateTime(timezone=True)),
+)
+
+_snapshots_table = sa.table(
+    "snapshots",
+    sa.column("id", sa.Uuid),
+    sa.column("host_id", sa.Uuid),
+    sa.column("timestamp", sa.DateTime(timezone=True)),
+    sa.column("snapshot_type", sa.String),
+    sa.column("data", sa.JSON),
+    sa.column("created_at", sa.DateTime(timezone=True)),
+)
+
+_sessions_table = sa.table(
+    "sessions",
+    sa.column("id", sa.Uuid),
+    sa.column("host_id", sa.Uuid),
+    sa.column("linux_user_id", sa.Uuid),
+    sa.column("session_type", sa.String),
+    sa.column("terminal", sa.String),
+    sa.column("remote_host", sa.String),
+    sa.column("started_at", sa.DateTime(timezone=True)),
+    sa.column("ended_at", sa.DateTime(timezone=True)),
+    sa.column("created_at", sa.DateTime(timezone=True)),
+)
+
 
 def _populate_test_files(engine: sa.Engine, host_id: uuid.UUID) -> dict[str, uuid.UUID]:
     """Insert test records with legacy, canonical, and edge-case file_types."""
@@ -207,8 +240,8 @@ class TestNormalizeFileTypesMigrationSQLite:
         new_file_type = _get_file_types(engine, {"new": new_file_id})["new"]
         assert new_file_type == "file", "newly created canonical file must not be corrupted on downgrade"
 
-        # 8. Test re-upgrade to head is idempotent
-        command.upgrade(alembic_cfg, "head")
+        # 8. Test re-upgrade to 0002_normalize_file_types is idempotent
+        command.upgrade(alembic_cfg, "0002_normalize_file_types")
         assert _get_current_revision(engine) == "0002_normalize_file_types"
         reupgraded_types = _get_file_types(engine, file_ids)
         assert reupgraded_types == updated_types
@@ -241,40 +274,77 @@ class TestNormalizeFileTypesMigrationSQLite:
         engine.dispose()
 
 
-class TestNormalizeFileTypesMigrationPostgreSQL:
-    """Test 0002_normalize_file_types against an isolated disposable PostgreSQL database."""
+@pytest.fixture
+def disposable_pg_url() -> Generator[str, None, None]:
+    """Create a temporary disposable PostgreSQL database, yield its URL, and drop it after."""
+    test_db_name = f"osiris_disp_mig_{uuid.uuid4().hex[:8]}"
 
-    @pytest.fixture
-    def disposable_pg_url(self) -> Generator[str, None, None]:
-        """Create a temporary disposable PostgreSQL database, yield its URL, and drop it after."""
-        test_db_name = f"osiris_disp_mig_{uuid.uuid4().hex[:8]}"
+    try:
+        base_url = sa.engine.make_url(settings.database_url)
+    except Exception:
+        base_url = sa.engine.make_url("postgresql://localhost:5432/osiris_dev")
 
+    if not base_url.drivername.startswith("postgresql"):
+        base_url = sa.engine.make_url("postgresql://localhost:5432/osiris_dev")
+
+    maintenance_url = base_url.set(database="postgres")
+    disposable_url = base_url.set(database=test_db_name)
+
+    # Attempt to create database via SQLAlchemy on maintenance db
+    created_via_sa = False
+    try:
+        m_engine = sa.create_engine(str(maintenance_url), isolation_level="AUTOCOMMIT")
+        with m_engine.connect() as conn:
+            conn.execute(sa.text(f'CREATE DATABASE "{test_db_name}"'))
+        m_engine.dispose()
+        created_via_sa = True
+    except Exception as sa_err:
+        # Fallback to createdb subprocess
         try:
-            base_url = sa.engine.make_url(settings.database_url)
-        except Exception:
-            base_url = sa.engine.make_url("postgresql://localhost:5432/osiris_dev")
+            env = os.environ.copy()
+            if base_url.password:
+                env["PGPASSWORD"] = base_url.password
+            cmd = ["createdb"]
+            if base_url.host:
+                cmd.extend(["-h", base_url.host])
+            if base_url.port:
+                cmd.extend(["-p", str(base_url.port)])
+            if base_url.username:
+                cmd.extend(["-U", base_url.username])
+            cmd.append(test_db_name)
+            res = subprocess.run(cmd, env=env, capture_output=True, text=True)
+            if res.returncode != 0:
+                pytest.skip(f"PostgreSQL not available for disposable db test: {sa_err}; {res.stderr}")
+        except FileNotFoundError:
+            pytest.skip(f"PostgreSQL not available for disposable db test: {sa_err}")
 
-        if not base_url.drivername.startswith("postgresql"):
-            base_url = sa.engine.make_url("postgresql://localhost:5432/osiris_dev")
-
-        maintenance_url = base_url.set(database="postgres")
-        disposable_url = base_url.set(database=test_db_name)
-
-        # Attempt to create database via SQLAlchemy on maintenance db
-        created_via_sa = False
+    try:
+        yield str(disposable_url)
+    finally:
+        # Teardown: terminate active connections and drop the disposable database
+        dropped = False
         try:
             m_engine = sa.create_engine(str(maintenance_url), isolation_level="AUTOCOMMIT")
             with m_engine.connect() as conn:
-                conn.execute(sa.text(f'CREATE DATABASE "{test_db_name}"'))
+                conn.execute(
+                    sa.text(
+                        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                        "WHERE datname = :dbname AND pid <> pg_backend_pid()"
+                    ),
+                    {"dbname": test_db_name},
+                )
+                conn.execute(sa.text(f'DROP DATABASE IF EXISTS "{test_db_name}"'))
             m_engine.dispose()
-            created_via_sa = True
-        except Exception as sa_err:
-            # Fallback to createdb subprocess
+            dropped = True
+        except Exception:
+            pass
+
+        if not dropped:
             try:
                 env = os.environ.copy()
                 if base_url.password:
                     env["PGPASSWORD"] = base_url.password
-                cmd = ["createdb"]
+                cmd = ["dropdb", "--if-exists"]
                 if base_url.host:
                     cmd.extend(["-h", base_url.host])
                 if base_url.port:
@@ -282,49 +352,13 @@ class TestNormalizeFileTypesMigrationPostgreSQL:
                 if base_url.username:
                     cmd.extend(["-U", base_url.username])
                 cmd.append(test_db_name)
-                res = subprocess.run(cmd, env=env, capture_output=True, text=True)
-                if res.returncode != 0:
-                    pytest.skip(f"PostgreSQL not available for disposable db test: {sa_err}; {res.stderr}")
-            except FileNotFoundError:
-                pytest.skip(f"PostgreSQL not available for disposable db test: {sa_err}")
-
-        try:
-            yield str(disposable_url)
-        finally:
-            # Teardown: terminate active connections and drop the disposable database
-            dropped = False
-            try:
-                m_engine = sa.create_engine(str(maintenance_url), isolation_level="AUTOCOMMIT")
-                with m_engine.connect() as conn:
-                    conn.execute(
-                        sa.text(
-                            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                            "WHERE datname = :dbname AND pid <> pg_backend_pid()"
-                        ),
-                        {"dbname": test_db_name},
-                    )
-                    conn.execute(sa.text(f'DROP DATABASE IF EXISTS "{test_db_name}"'))
-                m_engine.dispose()
-                dropped = True
+                subprocess.run(cmd, env=env, capture_output=True)
             except Exception:
                 pass
 
-            if not dropped:
-                try:
-                    env = os.environ.copy()
-                    if base_url.password:
-                        env["PGPASSWORD"] = base_url.password
-                    cmd = ["dropdb", "--if-exists"]
-                    if base_url.host:
-                        cmd.extend(["-h", base_url.host])
-                    if base_url.port:
-                        cmd.extend(["-p", str(base_url.port)])
-                    if base_url.username:
-                        cmd.extend(["-U", base_url.username])
-                    cmd.append(test_db_name)
-                    subprocess.run(cmd, env=env, capture_output=True)
-                except Exception:
-                    pass
+
+class TestNormalizeFileTypesMigrationPostgreSQL:
+    """Test 0002_normalize_file_types against an isolated disposable PostgreSQL database."""
 
     def test_upgrade_and_downgrade_normalization_postgres(
         self, disposable_pg_url: str, monkeypatch: pytest.MonkeyPatch
@@ -409,8 +443,8 @@ class TestNormalizeFileTypesMigrationPostgreSQL:
         new_file_type = _get_file_types(engine, {"new": new_file_id})["new"]
         assert new_file_type == "file", "newly created canonical file must not be corrupted on downgrade"
 
-        # 8. Test re-upgrade to head is idempotent
-        command.upgrade(alembic_cfg, "head")
+        # 8. Test re-upgrade to 0002_normalize_file_types is idempotent
+        command.upgrade(alembic_cfg, "0002_normalize_file_types")
         assert _get_current_revision(engine) == "0002_normalize_file_types"
         reupgraded_types = _get_file_types(engine, file_ids)
         assert reupgraded_types == updated_types
@@ -436,5 +470,347 @@ class TestNormalizeFileTypesMigrationPostgreSQL:
 
         command.downgrade(alembic_cfg, "0001_phase1_schema")
         assert _get_current_revision(engine) == "0001_phase1_schema"
+
+        engine.dispose()
+
+
+class TestSnapshotsAndSessionsMigrationSQLite:
+    """Test 0003_snapshots_and_sessions against an isolated SQLite database."""
+
+    def test_upgrade_and_downgrade_snapshots_and_sessions(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        db_path = tmp_path / "disposable_snap_sess.db"
+        db_url = f"sqlite:///{db_path}"
+
+        monkeypatch.setenv("OSIRIS_DATABASE_URL", db_url)
+        monkeypatch.setattr(settings, "database_url", db_url)
+
+        alembic_cfg = Config("alembic.ini")
+        alembic_cfg.set_main_option("sqlalchemy.url", db_url)
+
+        # 1. Upgrade through 0002
+        command.upgrade(alembic_cfg, "0002_normalize_file_types")
+        engine = sa.create_engine(db_url)
+        assert _get_current_revision(engine) == "0002_normalize_file_types"
+
+        inspector = sa.inspect(engine)
+        pre_tables = set(inspector.get_table_names())
+        assert "snapshots" not in pre_tables
+        assert "sessions" not in pre_tables
+
+        # 2. Upgrade to 0003_snapshots_and_sessions
+        command.upgrade(alembic_cfg, "0003_snapshots_and_sessions")
+        assert _get_current_revision(engine) == "0003_snapshots_and_sessions"
+
+        # 3. Verify schema structure
+        inspector = sa.inspect(engine)
+        post_tables = set(inspector.get_table_names())
+        assert "snapshots" in post_tables
+        assert "sessions" in post_tables
+
+        snapshot_cols = {col["name"] for col in inspector.get_columns("snapshots")}
+        expected_snap_cols = {"id", "host_id", "timestamp", "snapshot_type", "data", "created_at"}
+        assert expected_snap_cols.issubset(snapshot_cols)
+
+        session_cols = {col["name"] for col in inspector.get_columns("sessions")}
+        expected_sess_cols = {
+            "id", "host_id", "linux_user_id", "session_type",
+            "terminal", "remote_host", "started_at", "ended_at", "created_at"
+        }
+        assert expected_sess_cols.issubset(session_cols)
+
+        # Verify indexes
+        snap_indexes = {ix["name"] for ix in inspector.get_indexes("snapshots")}
+        assert "ix_snapshots_host_ts" in snap_indexes
+
+        sess_indexes = {ix["name"] for ix in inspector.get_indexes("sessions")}
+        assert "ix_sessions_host_started" in sess_indexes
+        assert "ix_sessions_linux_user_id" in sess_indexes
+
+        # 4. Insert data into snapshots and sessions
+        now = _utcnow()
+        host_id = uuid.uuid4()
+        user_id = uuid.uuid4()
+        snap_id = uuid.uuid4()
+        sess_id = uuid.uuid4()
+        sess_null_user_id = uuid.uuid4()
+
+        payload_data = {"metrics": {"cpu": 15.4, "memory": 55.2}, "processes": [101, 102]}
+
+        with engine.begin() as conn:
+            conn.execute(
+                _hosts_table.insert().values(
+                    id=host_id,
+                    hostname="snapshot-mig-host",
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                _linux_users_table.insert().values(
+                    id=user_id,
+                    host_id=host_id,
+                    uid=1001,
+                    username="snapuser",
+                    first_seen_at=now,
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                _snapshots_table.insert().values(
+                    id=snap_id,
+                    host_id=host_id,
+                    timestamp=now,
+                    snapshot_type="system",
+                    data=payload_data,
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                _sessions_table.insert().values(
+                    id=sess_id,
+                    host_id=host_id,
+                    linux_user_id=user_id,
+                    session_type="ssh",
+                    terminal="pts/2",
+                    remote_host="192.168.1.55",
+                    started_at=now,
+                    ended_at=now,
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                _sessions_table.insert().values(
+                    id=sess_null_user_id,
+                    host_id=host_id,
+                    linux_user_id=None,
+                    session_type=None,
+                    terminal=None,
+                    remote_host=None,
+                    started_at=now,
+                    ended_at=None,
+                    created_at=now,
+                )
+            )
+
+        # 5. Read back and verify persisted records
+        with engine.connect() as conn:
+            snap_row = conn.execute(
+                sa.select(_snapshots_table).where(_snapshots_table.c.id == snap_id)
+            ).one()
+            assert snap_row.host_id == host_id
+            assert snap_row.snapshot_type == "system"
+            import json
+            actual_data = snap_row.data if isinstance(snap_row.data, dict) else json.loads(snap_row.data)
+            assert actual_data["metrics"]["cpu"] == 15.4
+
+            sess_row = conn.execute(
+                sa.select(_sessions_table).where(_sessions_table.c.id == sess_id)
+            ).one()
+            assert sess_row.host_id == host_id
+            assert sess_row.linux_user_id == user_id
+            assert sess_row.session_type == "ssh"
+            assert sess_row.terminal == "pts/2"
+            assert sess_row.remote_host == "192.168.1.55"
+
+            null_sess_row = conn.execute(
+                sa.select(_sessions_table).where(_sessions_table.c.id == sess_null_user_id)
+            ).one()
+            assert null_sess_row.linux_user_id is None
+            assert null_sess_row.session_type is None
+            assert null_sess_row.terminal is None
+            assert null_sess_row.remote_host is None
+            assert null_sess_row.ended_at is None
+
+        # 6. Downgrade to 0002_normalize_file_types
+        command.downgrade(alembic_cfg, "0002_normalize_file_types")
+        assert _get_current_revision(engine) == "0002_normalize_file_types"
+
+        inspector = sa.inspect(engine)
+        down_tables = set(inspector.get_table_names())
+        assert "snapshots" not in down_tables
+        assert "sessions" not in down_tables
+        assert "hosts" in down_tables
+
+        # 7. Re-upgrade to head is idempotent
+        command.upgrade(alembic_cfg, "head")
+        assert _get_current_revision(engine) == "0003_snapshots_and_sessions"
+
+        inspector = sa.inspect(engine)
+        reup_tables = set(inspector.get_table_names())
+        assert "snapshots" in reup_tables
+        assert "sessions" in reup_tables
+
+        engine.dispose()
+
+    def test_full_empty_cycle(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Verify full upgrade and downgrade cycle from base to 0003 on empty DB."""
+        db_path = tmp_path / "empty_full_cycle.db"
+        db_url = f"sqlite:///{db_path}"
+
+        monkeypatch.setenv("OSIRIS_DATABASE_URL", db_url)
+        monkeypatch.setattr(settings, "database_url", db_url)
+
+        alembic_cfg = Config("alembic.ini")
+        alembic_cfg.set_main_option("sqlalchemy.url", db_url)
+
+        command.upgrade(alembic_cfg, "0001_phase1_schema")
+        engine = sa.create_engine(db_url)
+        assert _get_current_revision(engine) == "0001_phase1_schema"
+
+        command.upgrade(alembic_cfg, "0002_normalize_file_types")
+        assert _get_current_revision(engine) == "0002_normalize_file_types"
+
+        command.upgrade(alembic_cfg, "0003_snapshots_and_sessions")
+        assert _get_current_revision(engine) == "0003_snapshots_and_sessions"
+
+        command.downgrade(alembic_cfg, "0002_normalize_file_types")
+        assert _get_current_revision(engine) == "0002_normalize_file_types"
+
+        command.downgrade(alembic_cfg, "0001_phase1_schema")
+        assert _get_current_revision(engine) == "0001_phase1_schema"
+
+        command.downgrade(alembic_cfg, "base")
+        assert _get_current_revision(engine) is None
+
+        engine.dispose()
+
+
+class TestSnapshotsAndSessionsMigrationPostgreSQL:
+    """Test 0003_snapshots_and_sessions against an isolated disposable PostgreSQL database."""
+
+    def test_upgrade_and_downgrade_snapshots_and_sessions_postgres(
+        self, disposable_pg_url: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("OSIRIS_DATABASE_URL", disposable_pg_url)
+        monkeypatch.setattr(settings, "database_url", disposable_pg_url)
+
+        alembic_cfg = Config("alembic.ini")
+        alembic_cfg.set_main_option("sqlalchemy.url", disposable_pg_url)
+
+        command.upgrade(alembic_cfg, "0002_normalize_file_types")
+        engine = sa.create_engine(disposable_pg_url)
+        assert _get_current_revision(engine) == "0002_normalize_file_types"
+
+        # Upgrade to 0003
+        command.upgrade(alembic_cfg, "0003_snapshots_and_sessions")
+        assert _get_current_revision(engine) == "0003_snapshots_and_sessions"
+
+        inspector = sa.inspect(engine)
+        tables = set(inspector.get_table_names())
+        assert "snapshots" in tables
+        assert "sessions" in tables
+
+        snapshot_cols = {col["name"] for col in inspector.get_columns("snapshots")}
+        expected_snap_cols = {"id", "host_id", "timestamp", "snapshot_type", "data", "created_at"}
+        assert expected_snap_cols.issubset(snapshot_cols)
+
+        session_cols = {col["name"] for col in inspector.get_columns("sessions")}
+        expected_sess_cols = {
+            "id", "host_id", "linux_user_id", "session_type",
+            "terminal", "remote_host", "started_at", "ended_at", "created_at"
+        }
+        assert expected_sess_cols.issubset(session_cols)
+
+        # Verify indexes on PostgreSQL
+        snap_indexes = {ix["name"] for ix in inspector.get_indexes("snapshots")}
+        assert "ix_snapshots_host_ts" in snap_indexes
+
+        sess_indexes = {ix["name"] for ix in inspector.get_indexes("sessions")}
+        assert "ix_sessions_host_started" in sess_indexes
+        assert "ix_sessions_linux_user_id" in sess_indexes
+
+        # Insert and verify JSONB in snapshots and sessions
+        now = _utcnow()
+        host_id = uuid.uuid4()
+        user_id = uuid.uuid4()
+        snap_id = uuid.uuid4()
+        sess_id = uuid.uuid4()
+        sess_null_user_id = uuid.uuid4()
+
+        with engine.begin() as conn:
+            conn.execute(
+                _hosts_table.insert().values(
+                    id=host_id,
+                    hostname="pg-snap-host",
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                _linux_users_table.insert().values(
+                    id=user_id,
+                    host_id=host_id,
+                    uid=1002,
+                    username="pguser",
+                    first_seen_at=now,
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                _snapshots_table.insert().values(
+                    id=snap_id,
+                    host_id=host_id,
+                    timestamp=now,
+                    snapshot_type="system",
+                    data={"nested": {"count": 100}},
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                _sessions_table.insert().values(
+                    id=sess_id,
+                    host_id=host_id,
+                    linux_user_id=user_id,
+                    session_type="tty",
+                    terminal="tty1",
+                    remote_host=None,
+                    started_at=now,
+                    ended_at=None,
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                _sessions_table.insert().values(
+                    id=sess_null_user_id,
+                    host_id=host_id,
+                    linux_user_id=None,
+                    session_type=None,
+                    terminal=None,
+                    remote_host=None,
+                    started_at=now,
+                    ended_at=None,
+                    created_at=now,
+                )
+            )
+
+        with engine.connect() as conn:
+            snap_row = conn.execute(
+                sa.select(_snapshots_table).where(_snapshots_table.c.id == snap_id)
+            ).one()
+            assert snap_row.data["nested"]["count"] == 100
+
+            null_sess_row = conn.execute(
+                sa.select(_sessions_table).where(_sessions_table.c.id == sess_null_user_id)
+            ).one()
+            assert null_sess_row.linux_user_id is None
+            assert null_sess_row.session_type is None
+            assert null_sess_row.terminal is None
+            assert null_sess_row.remote_host is None
+            assert null_sess_row.ended_at is None
+
+        # Downgrade back to 0002
+        command.downgrade(alembic_cfg, "0002_normalize_file_types")
+        assert _get_current_revision(engine) == "0002_normalize_file_types"
+
+        inspector = sa.inspect(engine)
+        down_tables = set(inspector.get_table_names())
+        assert "snapshots" not in down_tables
+        assert "sessions" not in down_tables
+
+        # Re-upgrade to head
+        command.upgrade(alembic_cfg, "head")
+        assert _get_current_revision(engine) == "0003_snapshots_and_sessions"
 
         engine.dispose()
