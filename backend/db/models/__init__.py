@@ -13,6 +13,10 @@ from backend.db.models.fim_baseline import FimBaseline
 from backend.db.models.fim_baseline_file import FimBaselineFile
 from backend.db.models.fim_deviation import FimDeviation
 from backend.db.models.host import Host
+from backend.db.models.incident import Incident
+from backend.db.models.incident_event import IncidentEvent
+from backend.db.models.incident_evidence import IncidentEvidence
+from backend.db.models.incident_history import IncidentHistory
 from backend.db.models.linux_user import LinuxUser
 from backend.db.models.process import Process
 from backend.db.models.resource_snapshot import ResourceSnapshot
@@ -30,6 +34,10 @@ __all__ = [
     "FimBaselineFile",
     "FimDeviation",
     "Host",
+    "Incident",
+    "IncidentEvent",
+    "IncidentEvidence",
+    "IncidentHistory",
     "LinuxUser",
     "Process",
     "ResourceSnapshot",

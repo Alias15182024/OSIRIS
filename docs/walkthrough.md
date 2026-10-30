@@ -768,3 +768,103 @@ All unit, migration, integration, and contract test suites execute cleanly with 
 - **`tests/unit/test_fim_view_contract.py` (10 passed)**: Markup element existence, security contract verification (zero innerHTML, zero localStorage, zero eval), Apple JavaScriptCore syntax execution.
 - **`tests/unit/test_migrations.py` (11 passed)**: Full upgrade and downgrade testing for revision `0005_fim_baselines_deviations` on both SQLite and PostgreSQL.
 
+---
+
+# Phase 2 Milestone 2.6: Incident Lifecycle Management Walkthrough
+
+Milestone 2.6 unifies the detection engine, forensic timeline, user sessions, system-state snapshots, process tracking, filesystem catalog, and file integrity monitoring into a cohesive incident lifecycle and evidence management framework.
+
+All Milestone 2.6 components have been implemented, verified through automated unit and contract tests, validated against OpenAPI 3.1.0 specifications, and integrated into the frontend SPA dashboard.
+
+---
+
+## 1. Key Components & Implementation Summary
+
+### 1.1 Relational Schema & Reversible Migrations
+- **Revision `0006_incidents_and_evidence` (`database/migrations/versions/0006_incidents_and_evidence.py`)**:
+  - `incidents`: Primary incident record tracking title, description, severity, status, category, host association, assignee, creator, observation bounds (`first_observed_at`, `last_observed_at`), and containment/resolution/closure audit timestamps and narratives.
+  - `incident_events`: Many-to-many relationship mapping forensic audit telemetry directly to incidents with investigative notes and relationship labels.
+  - `incident_evidence`: Polymorphic forensic evidence catalog with provenance metadata, supporting foreign keys to detections, events, FIM deviations, sessions, snapshots, processes, and files.
+  - `incident_history`: Append-only immutable audit trail capturing lifecycle transitions, severity adjustments, analyst notes, and evidence associations.
+- **Strict Integrity & Isolation**:
+  - Check constraints for valid statuses (`open`, `investigating`, `contained`, `resolved`, `closed`) and severities (`info`, `low`, `medium`, `high`, `critical`).
+  - Unique composite index `uq_incident_evidence_source` preventing duplicate evidence bindings.
+  - Reversible Alembic upgrade and downgrade tested cleanly across both SQLite and PostgreSQL.
+
+### 1.2 Incident Lifecycle State Machine & Service
+- **Formal State Machine (`backend/services/incidents/lifecycle.py`)**:
+  - Enforces permitted forward transitions (`open` → `investigating` → `contained` → `resolved` → `closed`) and valid shortcuts (`open` → `contained` or `open` → `closed` for false positives).
+  - Enforces mandatory analyst rationale/justification when reopening closed incidents.
+  - Rejects invalid backwards transitions (e.g. `closed` → `contained`).
+- **Severity Management**:
+  - Ranks severities: `critical` (5) > `high` (4) > `medium` (3) > `low` (2) > `info` (1).
+  - Automatic escalation when higher-severity alerts correlate.
+  - Requires explicit confirmation flag (`allow_downgrade=True`) and justification note for downgrades.
+- **Transactional Service (`backend/services/incidents/service.py`)**:
+  - CRUD operations with pagination, multi-criteria filtering, analyst assignment, and note appending.
+  - Preserves caller-owned transaction boundaries with session flushing.
+
+### 1.3 Detection Correlation Engine
+- **Automated Correlation (`backend/services/incidents/correlator.py`)**:
+  - Chronological correlation of incoming security detections into existing open/investigating incidents or automated creation of new incidents.
+  - Multi-factor correlation rules: shared user session, shared process, shared FIM deviation, category match within active investigation window (default 2 hours), and temporal proximity fallback (15 minutes).
+  - Strict host isolation: alerts on Host A never attach to incidents on Host B.
+  - Deduplication and idempotency: identical alerts skip duplicate incident and evidence creation.
+  - Decoupled lifecycle: detection acknowledgment never automatically resolves or closes the incident.
+
+### 1.4 Forensic Evidence Management & Provenance
+- **Evidence Manager (`backend/services/incidents/evidence_manager.py`)**:
+  - Typed linking methods for detections, events, FIM deviations, sessions, snapshots, processes, files, and generic/custom artifacts.
+  - Enforces host consistency: linking Host B artifacts to Host A incidents raises `HostMismatchError`.
+  - Duplicate detection: attempting to link existing artifacts raises `EvidenceDuplicateError`.
+  - Provenance capture: snapshots metadata, timestamps, and subsystem origins in JSONB for immutable auditability.
+
+### 1.5 Forensic Report Generator
+- **Report Generator (`backend/services/incidents/report.py`)**:
+  - Structured JSON and Markdown forensic report exporter.
+  - Segregates observed facts (`observed_fact` from telemetry and system artifacts) from analyst interpretations (`analyst_interpretation` from notes and manual status updates).
+  - Handles missing or deleted source entities gracefully via cached provenance metadata.
+  - Read-only safety: generates reports without mutating database state.
+
+### 1.6 RESTful API
+- **Route Handlers (`backend/api/routes/incidents.py`)**:
+  - `GET /api/incidents`: Filtered and paginated incident listing.
+  - `POST /api/incidents`: Incident creation (restricted to `admin`, `analyst`).
+  - `GET /api/incidents/{id}`: Detailed incident retrieval.
+  - `PATCH /api/incidents/{id}`: Metadata updates.
+  - `POST /api/incidents/{id}/status`: Lifecycle transitions with summary capture.
+  - `POST /api/incidents/{id}/severity`: Severity adjustments and downgrade gating.
+  - `POST /api/incidents/{id}/assign`: Analyst assignment.
+  - `POST /api/incidents/{id}/notes`: Investigation note logging.
+  - `GET /api/incidents/{id}/history`: Complete audit trail retrieval.
+  - `GET` & `POST /api/incidents/{id}/evidence`: Evidence inventory and linking.
+  - `GET` & `POST /api/incidents/{id}/events`: Event association and timeline integration.
+  - `GET /api/incidents/{id}/report`: Structured report export in JSON or Markdown.
+- **RBAC Enforcement**:
+  - `viewer` role permitted read access (`GET`).
+  - Mutation endpoints (`POST`, `PATCH`) strictly restricted to `admin` and `analyst` roles (403 Forbidden for viewers).
+
+### 1.7 Frontend Incident Management View
+- **User Interface (`frontend/static/js/views/incidents.js`)**:
+  - Incident queue with status tabs, severity badges, and host links.
+  - Case inspector modal with summary statistics, timeline, correlated artifacts, and action controls.
+  - Create incident modal with field validation.
+  - Report export buttons triggering instantaneous file downloads.
+  - Strict security adherence: zero `innerHTML`, zero `localStorage`, zero `eval`. Verified cleanly in JavaScriptCore.
+
+---
+
+## 2. Test Verification & Results
+
+### 2.1 Workspace Pytest Suite
+- **1,208 passed, 12 skipped, 56 warnings in 18.93s** across all test suites in the workspace.
+
+### 2.2 Milestone 2.6 Targeted Test Suites
+- **`tests/unit/test_incident_lifecycle.py` (10 passed)**: State machine valid forward transitions, valid shortcuts, reopening rationale enforcement, invalid transition rejection, severity ordering, CRUD operations, assignment, and note audit logging.
+- **`tests/unit/test_incident_evidence.py` (8 passed)**: Evidence linking across all forensic entities (detections, events, FIM deviations, sessions, snapshots, processes, files), cross-host contamination prevention, duplicate evidence association rejection.
+- **`tests/unit/test_incident_correlation.py` (10 passed)**: Automated incident creation from detections, shared session correlation, shared process correlation, category matching within time window, window expiration, idempotency/deduplication, cross-host isolation, severity escalation without downgrades, detection acknowledgment decoupling, and chronological batch processing.
+- **`tests/unit/test_incident_report.py` (5 passed)**: Report generator schema validation, facts vs interpretations segregation, missing source entity handling, markdown export formatting, and read-only database safety.
+- **`tests/unit/test_api_incidents.py` (11 passed)**: Authentication enforcement (401), RBAC authorization (403 for viewers on mutations, allowed for analysts/admins), filtering and pagination, CRUD endpoints, lifecycle transitions, severity adjustment gating, evidence/event linking, report downloads, and 404/400 error handling.
+- **`tests/unit/test_incidents_view_contract.py` (9 passed)**: Static JavaScript delivery, HTML element existence, zero `localStorage`, zero `innerHTML`, zero `eval`, zero hardcoded secrets, and Apple JavaScriptCore syntax execution.
+- **`tests/unit/test_migrations.py` (13 passed)**: Reversible migration upgrade and downgrade for `0006_incidents_and_evidence` on both SQLite and PostgreSQL.
+

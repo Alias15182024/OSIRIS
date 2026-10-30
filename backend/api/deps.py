@@ -119,8 +119,33 @@ def get_current_user(
     return user
 
 
+def require_roles(*roles: str):
+    """FastAPI dependency factory enforcing role-based access control.
+
+    Parameters
+    ----------
+    *roles : str
+        One or more permitted roles (e.g. 'admin', 'analyst').
+
+    Returns
+    -------
+    Callable
+        Dependency function that verifies current user has one of the allowed roles.
+    """
+    def role_checker(user: AppUser = Depends(get_current_user)) -> AppUser:
+        if user.role not in roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied: role '{user.role}' lacks required permissions ({', '.join(roles)}).",
+            )
+        return user
+
+    return role_checker
+
+
 __all__ = [
     "bearer_scheme",
     "get_current_user",
     "get_db",
+    "require_roles",
 ]

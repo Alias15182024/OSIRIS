@@ -92,6 +92,13 @@
             <span id="nav-fim-badge" class="badge badge-danger hidden">0</span>
           </button>
         </li>
+        <li class="nav-item">
+          <button id="nav-incidents" class="nav-link" type="button" data-view="incidents">
+            <span class="nav-icon" aria-hidden="true">&#x1F6E1;</span>
+            <span class="nav-label">Incidents</span>
+            <span id="nav-incidents-badge" class="badge badge-danger hidden">0</span>
+          </button>
+        </li>
       </ul>
     </nav>
 
@@ -1203,6 +1210,132 @@
         </div>
       </section>
 
+      <!-- View 10: Security Incidents & Lifecycle Management -->
+      <section id="view-incidents" class="view-panel hidden" aria-labelledby="heading-incidents">
+        <div class="view-header">
+          <div class="view-header-main">
+            <h2 id="heading-incidents" class="view-title">Incident Lifecycle &amp; Case Management</h2>
+            <span class="view-subtitle">Unified security incident investigation, correlation, and response</span>
+          </div>
+          <div class="view-actions">
+            <button id="incident-create-trigger-btn" class="btn btn-primary btn-sm" type="button">+ New Incident</button>
+            <button id="incidents-refresh-btn" class="btn btn-outline btn-sm" type="button" aria-label="Refresh Incidents">Refresh</button>
+            <span id="incidents-refresh-time" class="timestamp-label"></span>
+            <span id="incidents-total-badge" class="badge badge-info">0 incidents</span>
+          </div>
+        </div>
+
+        <!-- Lifecycle Summary Cards -->
+        <div class="stats-grid mb-4">
+          <div class="stat-card stat-critical">
+            <span class="stat-label">Open</span>
+            <span id="incident-stat-open" class="stat-value">0</span>
+          </div>
+          <div class="stat-card stat-high">
+            <span class="stat-label">Investigating</span>
+            <span id="incident-stat-investigating" class="stat-value">0</span>
+          </div>
+          <div class="stat-card stat-warning">
+            <span class="stat-label">Contained</span>
+            <span id="incident-stat-contained" class="stat-value">0</span>
+          </div>
+          <div class="stat-card stat-info">
+            <span class="stat-label">Resolved</span>
+            <span id="incident-stat-resolved" class="stat-value">0</span>
+          </div>
+          <div class="stat-card stat-low">
+            <span class="stat-label">Closed</span>
+            <span id="incident-stat-closed" class="stat-value">0</span>
+          </div>
+        </div>
+
+        <!-- Filter Controls -->
+        <div class="card filter-card mb-4">
+          <form id="incidents-filter-form" class="filter-form" novalidate>
+            <div class="filter-row">
+              <div class="form-group">
+                <label for="filter-incident-host-id" class="form-label">Host ID</label>
+                <input id="filter-incident-host-id" class="form-input" type="text" placeholder="UUID filter...">
+              </div>
+              <div class="form-group">
+                <label for="filter-incident-severity" class="form-label">Severity</label>
+                <select id="filter-incident-severity" class="form-select">
+                  <option value="">All Severities</option>
+                  <option value="critical">Critical</option>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                  <option value="info">Info</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="filter-incident-status" class="form-label">Status</label>
+                <select id="filter-incident-status" class="form-select">
+                  <option value="">All Statuses</option>
+                  <option value="open">Open</option>
+                  <option value="investigating">Investigating</option>
+                  <option value="contained">Contained</option>
+                  <option value="resolved">Resolved</option>
+                  <option value="closed">Closed</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="filter-incident-category" class="form-label">Category</label>
+                <input id="filter-incident-category" class="form-input" type="text" placeholder="e.g. privilege_escalation">
+              </div>
+            </div>
+            <div class="filter-actions mt-2">
+              <button id="incidents-filter-apply-btn" class="btn btn-primary btn-sm" type="button">Apply Filters</button>
+              <button id="incidents-filter-reset-btn" class="btn btn-outline btn-sm" type="button">Reset</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Incidents Table -->
+        <div class="card table-card">
+          <div class="table-responsive">
+            <table class="data-table" aria-label="Security Incidents Table">
+              <thead>
+                <tr>
+                  <th scope="col">Title</th>
+                  <th scope="col">Severity</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Category</th>
+                  <th scope="col">Host</th>
+                  <th scope="col">First Observed</th>
+                  <th scope="col">Last Observed</th>
+                  <th scope="col">Assigned To</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="incidents-tbody">
+                <!-- Dynamically populated via incidents.js -->
+              </tbody>
+            </table>
+          </div>
+
+          <div id="incidents-loading" class="loading-state hidden" aria-live="polite">
+            <div class="spinner-sm"></div>
+            <span>Loading incidents...</span>
+          </div>
+
+          <div id="incidents-empty-state" class="empty-state hidden">
+            <span class="empty-icon" aria-hidden="true">&#x1F6E1;</span>
+            <p class="empty-text">No security incidents found matching the selected filters.</p>
+          </div>
+
+          <div id="incidents-error" class="error-state hidden" role="alert"></div>
+
+          <div class="pagination-controls">
+            <span id="incidents-page-info" class="pagination-info">Showing 0–0 of 0 incidents</span>
+            <div class="pagination-actions">
+              <button id="incidents-prev-btn" class="btn btn-outline btn-sm" type="button" disabled>&larr; Previous</button>
+              <button id="incidents-next-btn" class="btn btn-outline btn-sm" type="button" disabled>Next &rarr;</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
     </main>
 
     <!-- Login Modal Placeholder / Container -->
@@ -1593,6 +1726,240 @@
       </div>
     </div>
 
+    <!-- Incident Detail & Investigation Modal -->
+    <div id="incident-detail-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="detail-incident-modal-title">
+      <div class="modal-dialog modal-xl">
+        <div class="modal-header">
+          <h3 id="detail-incident-modal-title" class="modal-title">Incident Investigation &amp; Case Inspector</h3>
+          <button id="incident-modal-close" class="modal-close-btn" type="button" aria-label="Close modal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <!-- Meta Grid -->
+          <div class="detail-grid">
+            <div class="detail-item">
+              <span class="detail-label">Title:</span>
+              <span id="detail-incident-title" class="detail-val font-bold"></span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Severity:</span>
+              <span id="detail-incident-severity" class="detail-val"></span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Status:</span>
+              <span id="detail-incident-status" class="detail-val"></span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Category:</span>
+              <span id="detail-incident-category" class="detail-val font-mono"></span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Host:</span>
+              <span id="detail-incident-host" class="detail-val font-mono"></span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Assigned To:</span>
+              <span id="detail-incident-assigned" class="detail-val"></span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Created At:</span>
+              <span id="detail-incident-created" class="detail-val font-mono"></span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Observation Window:</span>
+              <span id="detail-incident-observed" class="detail-val font-mono"></span>
+            </div>
+          </div>
+
+          <!-- Description Box -->
+          <div class="modal-section mt-4">
+            <h4 class="section-subtitle">Incident Summary &amp; Description</h4>
+            <div id="detail-incident-description" class="explanation-box"></div>
+          </div>
+
+          <!-- Containment & Resolution Summaries -->
+          <div class="modal-section mt-4">
+            <h4 class="section-subtitle">Lifecycle Status &amp; Summaries</h4>
+            <div class="grid grid-2 gap-3">
+              <div class="card p-3">
+                <span class="font-bold text-sm">Containment Summary:</span>
+                <p id="detail-incident-containment" class="text-sm mt-1 text-muted">None recorded.</p>
+              </div>
+              <div class="card p-3">
+                <span class="font-bold text-sm">Resolution Summary:</span>
+                <p id="detail-incident-resolution" class="text-sm mt-1 text-muted">None recorded.</p>
+              </div>
+            </div>
+            <div class="card p-3 mt-2">
+              <span class="font-bold text-sm">Closure Summary:</span>
+              <p id="detail-incident-closure" class="text-sm mt-1 text-muted">None recorded.</p>
+            </div>
+          </div>
+
+          <!-- Investigation Controls & Export Row -->
+          <div class="modal-section mt-4 border-t pt-4">
+            <div class="grid grid-2 gap-4">
+              <!-- Status Transition Control -->
+              <div class="card p-3">
+                <h5 class="text-sm font-bold mb-2">Transition Lifecycle Status</h5>
+                <form id="incident-status-form" class="filter-form" novalidate>
+                  <div class="form-group mb-2">
+                    <label for="incident-new-status" class="form-label text-xs">New Status</label>
+                    <select id="incident-new-status" class="form-select form-select-sm">
+                      <option value="open">Open</option>
+                      <option value="investigating">Investigating</option>
+                      <option value="contained">Contained</option>
+                      <option value="resolved">Resolved</option>
+                      <option value="closed">Closed</option>
+                    </select>
+                  </div>
+                  <div class="form-group mb-2">
+                    <label for="incident-transition-notes" class="form-label text-xs">Notes / Justification</label>
+                    <input id="incident-transition-notes" class="form-input form-input-sm" type="text" placeholder="Reason for status change...">
+                  </div>
+                  <button id="incident-transition-submit-btn" class="btn btn-primary btn-sm" type="button">Update Status</button>
+                </form>
+              </div>
+
+              <!-- Severity Escalation Control -->
+              <div class="card p-3">
+                <h5 class="text-sm font-bold mb-2">Escalate / Adjust Severity</h5>
+                <form id="incident-severity-form" class="filter-form" novalidate>
+                  <div class="form-group mb-2">
+                    <label for="incident-new-severity" class="form-label text-xs">New Severity</label>
+                    <select id="incident-new-severity" class="form-select form-select-sm">
+                      <option value="critical">Critical</option>
+                      <option value="high">High</option>
+                      <option value="medium">Medium</option>
+                      <option value="low">Low</option>
+                      <option value="info">Info</option>
+                    </select>
+                  </div>
+                  <div class="form-group mb-2">
+                    <label for="incident-severity-reason" class="form-label text-xs">Rationale</label>
+                    <input id="incident-severity-reason" class="form-input form-input-sm" type="text" placeholder="Reason for severity change..." required>
+                  </div>
+                  <div class="form-group mb-2">
+                    <label class="text-xs"><input id="incident-allow-downgrade" type="checkbox"> Allow Downgrade</label>
+                  </div>
+                  <button id="incident-severity-submit-btn" class="btn btn-outline btn-sm" type="button">Update Severity</button>
+                </form>
+              </div>
+            </div>
+
+            <!-- Report Export Actions -->
+            <div class="flex gap-2 mt-3 pt-3 border-t">
+              <span class="text-sm font-bold self-center">Export Investigation Report:</span>
+              <button id="incident-export-json-btn" class="btn btn-outline btn-sm" type="button">Export JSON</button>
+              <button id="incident-export-md-btn" class="btn btn-primary btn-sm" type="button">Export Markdown</button>
+            </div>
+          </div>
+
+          <!-- Forensic Evidence & Correlated Artifacts -->
+          <div class="modal-section mt-4 border-t pt-4">
+            <h4 class="section-subtitle">Correlated Forensic Artifacts</h4>
+            
+            <!-- Detections Sub-section -->
+            <div class="evidence-subgroup mt-3">
+              <h5 class="text-sm font-bold mb-2">&#x1F6A8; Related Security Detections</h5>
+              <div id="incident-detail-detections-list" class="evidence-list-container"></div>
+            </div>
+
+            <!-- FIM Sub-section -->
+            <div class="evidence-subgroup mt-3">
+              <h5 class="text-sm font-bold mb-2">&#x1F50D; File Integrity Deviations</h5>
+              <div id="incident-detail-fim-list" class="evidence-list-container"></div>
+            </div>
+
+            <!-- Sessions Sub-section -->
+            <div class="evidence-subgroup mt-3">
+              <h5 class="text-sm font-bold mb-2">&#x1F464; Linked User Sessions</h5>
+              <div id="incident-detail-sessions-list" class="evidence-list-container"></div>
+            </div>
+
+            <!-- Evidence Inventory -->
+            <div class="evidence-subgroup mt-3">
+              <h5 class="text-sm font-bold mb-2">&#x1F4C1; Evidence Inventory &amp; Provenance</h5>
+              <div id="incident-detail-evidence-list" class="evidence-list-container"></div>
+            </div>
+
+            <!-- Forensic Events -->
+            <div class="evidence-subgroup mt-3">
+              <h5 class="text-sm font-bold mb-2">&#x26A1; Linked Forensic Events</h5>
+              <div id="incident-detail-events-list" class="evidence-list-container"></div>
+            </div>
+          </div>
+
+          <!-- Chronological Forensic Timeline -->
+          <div class="modal-section mt-4 border-t pt-4">
+            <h4 class="section-subtitle">Chronological Incident Timeline</h4>
+            <div id="incident-detail-timeline-list" class="timeline-container"></div>
+          </div>
+
+          <!-- Investigation Notes & Audit History -->
+          <div class="modal-section mt-4 border-t pt-4">
+            <h4 class="section-subtitle">Investigation Notes &amp; Audit Trail</h4>
+            
+            <!-- Add Note Form -->
+            <form id="incident-add-note-form" class="mt-2 mb-3">
+              <div class="form-group mb-2">
+                <label for="incident-new-note-text" class="form-label text-xs">Add Investigation Note</label>
+                <textarea id="incident-new-note-text" class="form-input text-sm" rows="2" placeholder="Record investigator findings, theories, or containment actions..." required></textarea>
+              </div>
+              <button id="incident-add-note-btn" class="btn btn-primary btn-sm" type="button">Add Note</button>
+            </form>
+
+            <div id="incident-detail-history-list" class="history-feed"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Create Incident Modal -->
+    <div id="incident-create-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="create-incident-modal-title">
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <h3 id="create-incident-modal-title" class="modal-title">Create Security Incident</h3>
+          <button id="incident-create-modal-close" class="modal-close-btn" type="button" aria-label="Close modal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div id="incident-create-error" class="alert-box alert-error hidden" role="alert" aria-live="polite"></div>
+          <form id="incident-create-form" novalidate>
+            <div class="form-group mb-3">
+              <label for="create-incident-title" class="form-label">Incident Title *</label>
+              <input id="create-incident-title" class="form-input" type="text" placeholder="e.g. Unauthorized Sudo Execution by Non-Admin" required>
+            </div>
+            <div class="form-group mb-3">
+              <label for="create-incident-description" class="form-label">Description</label>
+              <textarea id="create-incident-description" class="form-input" rows="3" placeholder="Summary of initial observations and investigation scope..."></textarea>
+            </div>
+            <div class="grid grid-2 gap-3 mb-3">
+              <div class="form-group">
+                <label for="create-incident-severity" class="form-label">Severity *</label>
+                <select id="create-incident-severity" class="form-select">
+                  <option value="critical">Critical</option>
+                  <option value="high" selected>High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                  <option value="info">Info</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="create-incident-category" class="form-label">Category</label>
+                <input id="create-incident-category" class="form-input" type="text" value="general" placeholder="e.g. privilege_escalation">
+              </div>
+            </div>
+            <div class="form-group mb-3">
+              <label for="create-incident-host-id" class="form-label">Host ID (Optional UUID)</label>
+              <input id="create-incident-host-id" class="form-input" type="text" placeholder="UUID of associated host">
+            </div>
+            <div class="modal-footer pt-3">
+              <button id="incident-create-submit-btn" class="btn btn-primary" type="submit">Create Incident</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
     <!-- Global Loading Indicator Shell -->
     <div id="global-loading-indicator" class="loading-overlay hidden" aria-live="assertive" aria-label="Loading content">
       <div class="spinner" aria-hidden="true"></div>
@@ -1619,6 +1986,7 @@
   <script src="/static/js/views/sessions.js" defer></script>
   <script src="/static/js/views/detections.js" defer></script>
   <script src="/static/js/views/fim.js" defer></script>
+  <script src="/static/js/views/incidents.js" defer></script>
   <script src="/static/js/app.js" defer></script>
 </body>
 </html>

@@ -30,6 +30,7 @@
     FIM_BASELINES: '/api/fim/baselines',
     FIM_DEVIATIONS: '/api/fim/deviations',
     FIM_VERIFY: '/api/fim/verify',
+    INCIDENTS: '/api/incidents',
   });
 
   let authExpiredCallback = null;
@@ -441,6 +442,193 @@
     return await fetchWithAuth(ENDPOINTS.FIM_VERIFY, options);
   }
 
+  /**
+   * Fetch paginated security incidents with optional query filters.
+   * @param {Object} [params={}]
+   * @returns {Promise<Object>} PaginatedIncidentResponse
+   */
+  async function getIncidents(params = {}) {
+    const searchParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== '') {
+        searchParams.set(key, String(val));
+      }
+    });
+    const qs = searchParams.toString();
+    const url = qs ? `${ENDPOINTS.INCIDENTS}?${qs}` : ENDPOINTS.INCIDENTS;
+    return await fetchWithAuth(url);
+  }
+
+  /**
+   * Fetch single incident detail by ID.
+   * @param {string} incidentId
+   * @returns {Promise<Object>} IncidentDetailResponse
+   */
+  async function getIncident(incidentId) {
+    return await fetchWithAuth(`${ENDPOINTS.INCIDENTS}/${encodeURIComponent(incidentId)}`);
+  }
+
+  /**
+   * Create a new incident.
+   * @param {Object} payload
+   * @returns {Promise<Object>} IncidentResponse
+   */
+  async function createIncident(payload = {}) {
+    const options = {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    };
+    return await fetchWithAuth(ENDPOINTS.INCIDENTS, options);
+  }
+
+  /**
+   * Update incident metadata or assignment.
+   * @param {string} incidentId
+   * @param {Object} payload
+   * @returns {Promise<Object>} IncidentResponse
+   */
+  async function updateIncident(incidentId, payload = {}) {
+    const options = {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    };
+    return await fetchWithAuth(`${ENDPOINTS.INCIDENTS}/${encodeURIComponent(incidentId)}`, options);
+  }
+
+  /**
+   * Transition incident status.
+   * @param {string} incidentId
+   * @param {Object} payload
+   * @returns {Promise<Object>} IncidentResponse
+   */
+  async function transitionIncidentStatus(incidentId, payload = {}) {
+    const options = {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    };
+    return await fetchWithAuth(`${ENDPOINTS.INCIDENTS}/${encodeURIComponent(incidentId)}/status`, options);
+  }
+
+  /**
+   * Escalate incident severity.
+   * @param {string} incidentId
+   * @param {Object} payload
+   * @returns {Promise<Object>} IncidentResponse
+   */
+  async function escalateIncidentSeverity(incidentId, payload = {}) {
+    const options = {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    };
+    return await fetchWithAuth(`${ENDPOINTS.INCIDENTS}/${encodeURIComponent(incidentId)}/severity`, options);
+  }
+
+  /**
+   * Assign an incident to an analyst.
+   * @param {string} incidentId
+   * @param {Object} payload
+   * @returns {Promise<Object>} IncidentResponse
+   */
+  async function assignIncident(incidentId, payload = {}) {
+    const options = {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    };
+    return await fetchWithAuth(`${ENDPOINTS.INCIDENTS}/${encodeURIComponent(incidentId)}/assign`, options);
+  }
+
+  /**
+   * Append an investigation note to an incident.
+   * @param {string} incidentId
+   * @param {Object} payload
+   * @returns {Promise<Object>} IncidentHistoryResponse
+   */
+  async function addIncidentNote(incidentId, payload = {}) {
+    const options = {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    };
+    return await fetchWithAuth(`${ENDPOINTS.INCIDENTS}/${encodeURIComponent(incidentId)}/notes`, options);
+  }
+
+  /**
+   * Get audit history for an incident.
+   * @param {string} incidentId
+   * @returns {Promise<Array>} IncidentHistoryResponse[]
+   */
+  async function getIncidentHistory(incidentId) {
+    return await fetchWithAuth(`${ENDPOINTS.INCIDENTS}/${encodeURIComponent(incidentId)}/history`);
+  }
+
+  /**
+   * List evidence attached to an incident.
+   * @param {string} incidentId
+   * @param {Object} [params={}]
+   * @returns {Promise<Array>} IncidentEvidenceResponse[]
+   */
+  async function getIncidentEvidence(incidentId, params = {}) {
+    const searchParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== '') {
+        searchParams.set(key, String(val));
+      }
+    });
+    const qs = searchParams.toString();
+    const url = qs
+      ? `${ENDPOINTS.INCIDENTS}/${encodeURIComponent(incidentId)}/evidence?${qs}`
+      : `${ENDPOINTS.INCIDENTS}/${encodeURIComponent(incidentId)}/evidence`;
+    return await fetchWithAuth(url);
+  }
+
+  /**
+   * Attach evidence to an incident.
+   * @param {string} incidentId
+   * @param {Object} payload
+   * @returns {Promise<Object>} IncidentEvidenceResponse
+   */
+  async function addIncidentEvidence(incidentId, payload = {}) {
+    const options = {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    };
+    return await fetchWithAuth(`${ENDPOINTS.INCIDENTS}/${encodeURIComponent(incidentId)}/evidence`, options);
+  }
+
+  /**
+   * List forensic events attached to an incident.
+   * @param {string} incidentId
+   * @returns {Promise<Array>} IncidentEventResponse[]
+   */
+  async function getIncidentEvents(incidentId) {
+    return await fetchWithAuth(`${ENDPOINTS.INCIDENTS}/${encodeURIComponent(incidentId)}/events`);
+  }
+
+  /**
+   * Link an event to an incident.
+   * @param {string} incidentId
+   * @param {Object} payload
+   * @returns {Promise<Object>} IncidentEventResponse
+   */
+  async function linkIncidentEvent(incidentId, payload = {}) {
+    const options = {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    };
+    return await fetchWithAuth(`${ENDPOINTS.INCIDENTS}/${encodeURIComponent(incidentId)}/events`, options);
+  }
+
+  /**
+   * Get or export investigation report.
+   * @param {string} incidentId
+   * @param {string} [format='json']
+   * @returns {Promise<Object|string>}
+   */
+  async function getIncidentReport(incidentId, format = 'json') {
+    return await fetchWithAuth(
+      `${ENDPOINTS.INCIDENTS}/${encodeURIComponent(incidentId)}/report?format=${encodeURIComponent(format)}`
+    );
+  }
+
   // Export to global namespace
   window.OsirisApi = Object.freeze({
     ENDPOINTS,
@@ -467,6 +655,20 @@
     getFimDeviations,
     getFimDeviation,
     verifyFim,
+    getIncidents,
+    getIncident,
+    createIncident,
+    updateIncident,
+    transitionIncidentStatus,
+    escalateIncidentSeverity,
+    assignIncident,
+    addIncidentNote,
+    getIncidentHistory,
+    getIncidentEvidence,
+    addIncidentEvidence,
+    getIncidentEvents,
+    linkIncidentEvent,
+    getIncidentReport,
   });
 
 })(typeof window !== 'undefined' ? window : this);

@@ -46,6 +46,7 @@
         sessions: document.getElementById('view-sessions'),
         detections: document.getElementById('view-detections'),
         fim: document.getElementById('view-fim'),
+        incidents: document.getElementById('view-incidents'),
       },
 
       // Modal elements
@@ -381,6 +382,11 @@
     // Load FIM data when fim view becomes active
     if (viewName === 'fim' && window.OsirisFim && typeof window.OsirisFim.loadFim === 'function') {
       window.OsirisFim.loadFim();
+    }
+
+    // Load incidents data when incidents view becomes active
+    if (viewName === 'incidents' && window.OsirisIncidents && typeof window.OsirisIncidents.loadIncidents === 'function') {
+      window.OsirisIncidents.loadIncidents();
     }
   }
 

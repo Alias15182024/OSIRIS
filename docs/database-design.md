@@ -448,33 +448,119 @@ INDEX ix_fim_deviations_detected_at (detected_at)
 INDEX ix_fim_deviations_host_detected (host_id, detected_at)
 ```
 
-### 3.14 Incident (Phase 2)
+### 3.14 Incident (Phase 2 — Milestone 2.6)
+
+Forensic incident container aggregating related security detections, forensic timeline events, file deviations, and system artifacts.
 
 ```
 incidents
-├── id              UUID        PRIMARY KEY
-├── title           VARCHAR     NOT NULL
-├── description     TEXT
-├── severity        VARCHAR     NOT NULL
-├── status          VARCHAR     NOT NULL DEFAULT 'open'
-├── opened_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
-├── closed_at       TIMESTAMPTZ
-├── assigned_to     UUID        FK → app_users.id  (NULLABLE)
-└── created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-INDEX (status)
+├── id                   UUID         PRIMARY KEY
+├── title                VARCHAR(255) NOT NULL
+├── description          TEXT         NULLABLE
+├── severity             VARCHAR(20)  NOT NULL (CHECK: critical, high, medium, low, info)
+├── status               VARCHAR(50)  NOT NULL DEFAULT 'open' (CHECK: open, investigating, contained, resolved, closed)
+├── category             VARCHAR(100) NOT NULL DEFAULT 'general'
+├── host_id              UUID         NULLABLE FK → hosts.id (ON DELETE CASCADE)
+├── created_by_id        UUID         NULLABLE FK → app_users.id (ON DELETE SET NULL)
+├── assigned_to_id       UUID         NULLABLE FK → app_users.id (ON DELETE SET NULL)
+├── first_observed_at    TIMESTAMPTZ  NULLABLE
+├── last_observed_at     TIMESTAMPTZ  NULLABLE
+├── contained_at         TIMESTAMPTZ  NULLABLE
+├── containment_summary  TEXT         NULLABLE
+├── resolved_at          TIMESTAMPTZ  NULLABLE
+├── resolution_summary   TEXT         NULLABLE
+├── closed_at            TIMESTAMPTZ  NULLABLE
+├── closure_summary      TEXT         NULLABLE
+├── created_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+└── updated_at           TIMESTAMPTZ  NULLABLE
+
+INDEX ix_incidents_host_created (host_id, created_at)
+INDEX ix_incidents_status (status)
+INDEX ix_incidents_severity (severity)
+INDEX ix_incidents_category (category)
+INDEX ix_incidents_assigned_to (assigned_to_id)
+INDEX ix_incidents_created_by (created_by_id)
+INDEX ix_incidents_first_observed (first_observed_at)
+INDEX ix_incidents_last_observed (last_observed_at)
 ```
 
-### 3.15 Evidence (Phase 2)
+### 3.15 Incident Events Association (Phase 2 — Milestone 2.6)
+
+Forensic event linkage mapping granular audit/system telemetry directly to incident timelines.
 
 ```
-evidence
-├── id              UUID        PRIMARY KEY
-├── incident_id     UUID        FK → incidents.id
-├── event_id        UUID        FK → events.id  (NULLABLE)
-├── evidence_type   VARCHAR     NOT NULL
-├── description     TEXT
-├── data            JSONB
-└── created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+incident_events
+├── id                      UUID         PRIMARY KEY
+├── incident_id             UUID         NOT NULL FK → incidents.id (ON DELETE CASCADE)
+├── event_id                UUID         NOT NULL FK → events.id (ON DELETE CASCADE)
+├── relationship            VARCHAR(50)  NOT NULL DEFAULT 'associated'
+├── investigation_notes     TEXT         NULLABLE
+├── association_timestamp   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+└── created_at              TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+
+INDEX ix_incident_events_incident (incident_id)
+INDEX ix_incident_events_event (event_id)
+UNIQUE uq_incident_event (incident_id, event_id)
+```
+
+### 3.16 Incident Evidence (Phase 2 — Milestone 2.6)
+
+Polymorphic forensic evidence repository supporting detections, sessions, snapshots, FIM deviations, processes, files, and external artifacts with full provenance tracking.
+
+```
+incident_evidence
+├── id                   UUID         PRIMARY KEY
+├── incident_id          UUID         NOT NULL FK → incidents.id (ON DELETE CASCADE)
+├── evidence_type        VARCHAR(50)  NOT NULL (CHECK: detection, event, fim_deviation, session, snapshot, process, file, custom)
+├── source_id            VARCHAR(255) NOT NULL
+├── title                VARCHAR(255) NOT NULL
+├── description          TEXT         NULLABLE
+├── provenance           JSON / JSONB NOT NULL DEFAULT '{}'
+├── detection_id         UUID         NULLABLE FK → detections.id (ON DELETE SET NULL)
+├── event_id             UUID         NULLABLE FK → events.id (ON DELETE SET NULL)
+├── fim_deviation_id     UUID         NULLABLE FK → fim_deviations.id (ON DELETE SET NULL)
+├── session_id           UUID         NULLABLE FK → sessions.id (ON DELETE SET NULL)
+├── snapshot_id          UUID         NULLABLE FK → snapshots.id (ON DELETE SET NULL)
+├── process_id           UUID         NULLABLE FK → processes.id (ON DELETE SET NULL)
+├── file_id              UUID         NULLABLE FK → files.id (ON DELETE SET NULL)
+├── created_by_id        UUID         NULLABLE FK → app_users.id (ON DELETE SET NULL)
+└── created_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+
+INDEX ix_incident_evidence_incident (incident_id)
+INDEX ix_incident_evidence_type (evidence_type)
+INDEX ix_incident_evidence_source (evidence_type, source_id)
+INDEX ix_incident_evidence_detection (detection_id)
+INDEX ix_incident_evidence_fim (fim_deviation_id)
+INDEX ix_incident_evidence_session (session_id)
+INDEX ix_incident_evidence_snapshot (snapshot_id)
+INDEX ix_incident_evidence_process (process_id)
+INDEX ix_incident_evidence_file (file_id)
+UNIQUE uq_incident_evidence_source (incident_id, evidence_type, source_id)
+```
+
+### 3.17 Incident History & Audit Trail (Phase 2 — Milestone 2.6)
+
+Immutable audit log recording status transitions, severity escalations, analyst notes, and evidence bindings.
+
+```
+incident_history
+├── id                   UUID         PRIMARY KEY
+├── incident_id          UUID         NOT NULL FK → incidents.id (ON DELETE CASCADE)
+├── change_type          VARCHAR(50)  NOT NULL (CHECK: incident_created, status_change, severity_change, assignment, note_added, evidence_added, event_added, incident_updated)
+├── from_status          VARCHAR(50)  NULLABLE
+├── to_status            VARCHAR(50)  NULLABLE
+├── from_severity        VARCHAR(20)  NULLABLE
+├── to_severity          VARCHAR(20)  NULLABLE
+├── user_id              UUID         NULLABLE FK → app_users.id (ON DELETE SET NULL)
+├── notes                TEXT         NULLABLE
+├── history_metadata     JSON / JSONB NOT NULL DEFAULT '{}'
+└── created_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+
+INDEX ix_incident_history_incident (incident_id)
+INDEX ix_incident_history_change (change_type)
+INDEX ix_incident_history_user (user_id)
+INDEX ix_incident_history_created (created_at)
+INDEX ix_incident_history_incident_created (incident_id, created_at)
 ```
 
 ### 3.16 Application User

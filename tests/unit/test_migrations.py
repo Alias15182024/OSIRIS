@@ -45,6 +45,30 @@ _hosts_table = sa.table(
     sa.column("created_at", sa.DateTime(timezone=True)),
 )
 
+_events_table = sa.table(
+    "events",
+    sa.column("id", sa.Uuid),
+    sa.column("host_id", sa.Uuid),
+    sa.column("process_id", sa.Uuid),
+    sa.column("timestamp", sa.DateTime(timezone=True)),
+    sa.column("ingested_at", sa.DateTime(timezone=True)),
+    sa.column("source", sa.String),
+    sa.column("event_type", sa.String),
+    sa.column("action", sa.String),
+    sa.column("severity", sa.String),
+    sa.column("uid", sa.Integer),
+    sa.column("username", sa.String),
+    sa.column("pid", sa.Integer),
+    sa.column("ppid", sa.Integer),
+    sa.column("command", sa.String),
+    sa.column("object_type", sa.String),
+    sa.column("object_path", sa.String),
+    sa.column("success", sa.Boolean),
+    sa.column("result", sa.String),
+    sa.column("payload", sa.JSON),
+    sa.column("created_at", sa.DateTime(timezone=True)),
+)
+
 _files_table = sa.table(
     "files",
     sa.column("id", sa.Uuid),
@@ -223,6 +247,74 @@ _fim_deviations_table = sa.table(
     sa.column("summary", sa.String),
     sa.column("explanation", sa.Text),
     sa.column("detected_at", sa.DateTime(timezone=True)),
+    sa.column("created_at", sa.DateTime(timezone=True)),
+)
+
+_incidents_table = sa.table(
+    "incidents",
+    sa.column("id", sa.Uuid),
+    sa.column("title", sa.String),
+    sa.column("description", sa.String),
+    sa.column("severity", sa.String),
+    sa.column("status", sa.String),
+    sa.column("category", sa.String),
+    sa.column("host_id", sa.Uuid),
+    sa.column("created_by_id", sa.Uuid),
+    sa.column("assigned_to_id", sa.Uuid),
+    sa.column("first_observed_at", sa.DateTime(timezone=True)),
+    sa.column("last_observed_at", sa.DateTime(timezone=True)),
+    sa.column("contained_at", sa.DateTime(timezone=True)),
+    sa.column("containment_summary", sa.String),
+    sa.column("resolved_at", sa.DateTime(timezone=True)),
+    sa.column("resolution_summary", sa.String),
+    sa.column("closed_at", sa.DateTime(timezone=True)),
+    sa.column("closure_summary", sa.String),
+    sa.column("created_at", sa.DateTime(timezone=True)),
+    sa.column("updated_at", sa.DateTime(timezone=True)),
+)
+
+_incident_events_table = sa.table(
+    "incident_events",
+    sa.column("id", sa.Uuid),
+    sa.column("incident_id", sa.Uuid),
+    sa.column("event_id", sa.Uuid),
+    sa.column("relationship", sa.String),
+    sa.column("association_timestamp", sa.DateTime(timezone=True)),
+    sa.column("investigation_notes", sa.String),
+)
+
+_incident_evidence_table = sa.table(
+    "incident_evidence",
+    sa.column("id", sa.Uuid),
+    sa.column("incident_id", sa.Uuid),
+    sa.column("evidence_type", sa.String),
+    sa.column("source_id", sa.String),
+    sa.column("title", sa.String),
+    sa.column("description", sa.String),
+    sa.column("provenance", sa.JSON),
+    sa.column("detection_id", sa.Uuid),
+    sa.column("event_id", sa.Uuid),
+    sa.column("fim_deviation_id", sa.Uuid),
+    sa.column("session_id", sa.Uuid),
+    sa.column("snapshot_id", sa.Uuid),
+    sa.column("process_id", sa.Uuid),
+    sa.column("file_id", sa.Uuid),
+    sa.column("created_by_id", sa.Uuid),
+    sa.column("created_at", sa.DateTime(timezone=True)),
+)
+
+_incident_history_table = sa.table(
+    "incident_history",
+    sa.column("id", sa.Uuid),
+    sa.column("incident_id", sa.Uuid),
+    sa.column("change_type", sa.String),
+    sa.column("from_status", sa.String),
+    sa.column("to_status", sa.String),
+    sa.column("from_severity", sa.String),
+    sa.column("to_severity", sa.String),
+    sa.column("user_id", sa.Uuid),
+    sa.column("notes", sa.String),
+    sa.column("history_metadata", sa.JSON),
     sa.column("created_at", sa.DateTime(timezone=True)),
 )
 
@@ -1480,5 +1572,233 @@ class TestFimMigrationPostgreSQL:
         # Re-upgrade to 0005
         command.upgrade(alembic_cfg, "0005_fim_baselines_deviations")
         assert _get_current_revision(engine) == "0005_fim_baselines_deviations"
+
+        engine.dispose()
+
+
+class TestIncidentMigrationSQLite:
+    """Test 0006_incidents_and_evidence against an isolated temporary SQLite database."""
+
+    def test_upgrade_and_downgrade_incidents_sqlite(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        db_file = tmp_path / "test_mig_0006.db"
+        sqlite_url = f"sqlite:///{db_file}"
+
+        monkeypatch.setenv("OSIRIS_DATABASE_URL", sqlite_url)
+        monkeypatch.setattr(settings, "database_url", sqlite_url)
+
+        alembic_cfg = Config("alembic.ini")
+        alembic_cfg.set_main_option("sqlalchemy.url", sqlite_url)
+
+        # 1. Upgrade through 0005
+        command.upgrade(alembic_cfg, "0005_fim_baselines_deviations")
+        engine = sa.create_engine(sqlite_url)
+        assert _get_current_revision(engine) == "0005_fim_baselines_deviations"
+
+        # 2. Upgrade to 0006_incidents_and_evidence
+        command.upgrade(alembic_cfg, "0006_incidents_and_evidence")
+        assert _get_current_revision(engine) == "0006_incidents_and_evidence"
+
+        # 3. Verify tables and indexes exist
+        inspector = sa.inspect(engine)
+        tables = set(inspector.get_table_names())
+        assert "incidents" in tables
+        assert "incident_events" in tables
+        assert "incident_evidence" in tables
+        assert "incident_history" in tables
+
+        # 4. Insert records across all 4 tables
+        now = _utcnow()
+        host_id = uuid.uuid4()
+        user_id = uuid.uuid4()
+        event_id = uuid.uuid4()
+        incident_id = uuid.uuid4()
+        event_assoc_id = uuid.uuid4()
+        evidence_id = uuid.uuid4()
+        history_id = uuid.uuid4()
+
+        with engine.begin() as conn:
+            conn.execute(
+                _hosts_table.insert().values(
+                    id=host_id,
+                    hostname="test-incident-host",
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                _events_table.insert().values(
+                    id=event_id,
+                    host_id=host_id,
+                    process_id=None,
+                    timestamp=now,
+                    ingested_at=now,
+                    source="process_collector",
+                    event_type="process_spawn",
+                    action="spawn",
+                    severity="high",
+                    uid=0,
+                    username="root",
+                    pid=1234,
+                    ppid=1,
+                    command="/bin/bash",
+                    object_type="process",
+                    object_path="/bin/bash",
+                    success=True,
+                    result="success",
+                    payload={},
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                _incidents_table.insert().values(
+                    id=incident_id,
+                    title="Suspicious Root Activity",
+                    description="Investigating suspicious root execution",
+                    severity="high",
+                    status="open",
+                    category="privilege_escalation",
+                    host_id=host_id,
+                    created_by_id=None,
+                    assigned_to_id=None,
+                    first_observed_at=now,
+                    last_observed_at=now,
+                    contained_at=None,
+                    containment_summary=None,
+                    resolved_at=None,
+                    resolution_summary=None,
+                    closed_at=None,
+                    closure_summary=None,
+                    created_at=now,
+                    updated_at=None,
+                )
+            )
+            conn.execute(
+                _incident_events_table.insert().values(
+                    id=event_assoc_id,
+                    incident_id=incident_id,
+                    event_id=event_id,
+                    relationship="trigger",
+                    association_timestamp=now,
+                    investigation_notes="Triggering event",
+                )
+            )
+            conn.execute(
+                _incident_evidence_table.insert().values(
+                    id=evidence_id,
+                    incident_id=incident_id,
+                    evidence_type="event",
+                    source_id=str(event_id),
+                    title="Primary Trigger Event",
+                    description="Process spawn event under /tmp",
+                    provenance={"source": "process_collector", "host_id": str(host_id)},
+                    detection_id=None,
+                    event_id=event_id,
+                    fim_deviation_id=None,
+                    session_id=None,
+                    snapshot_id=None,
+                    process_id=None,
+                    file_id=None,
+                    created_by_id=None,
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                _incident_history_table.insert().values(
+                    id=history_id,
+                    incident_id=incident_id,
+                    change_type="incident_created",
+                    from_status=None,
+                    to_status="open",
+                    from_severity=None,
+                    to_severity="high",
+                    user_id=None,
+                    notes="Incident automatically created",
+                    history_metadata={"source": "detection_correlation"},
+                    created_at=now,
+                )
+            )
+
+        with engine.connect() as conn:
+            inc_row = conn.execute(
+                sa.select(_incidents_table).where(_incidents_table.c.id == incident_id)
+            ).one()
+            assert inc_row.title == "Suspicious Root Activity"
+            assert inc_row.severity == "high"
+            assert inc_row.status == "open"
+
+            ev_row = conn.execute(
+                sa.select(_incident_evidence_table).where(_incident_evidence_table.c.id == evidence_id)
+            ).one()
+            assert ev_row.evidence_type == "event"
+            assert ev_row.source_id == str(event_id)
+
+        # 5. Downgrade back to 0005_fim_baselines_deviations
+        command.downgrade(alembic_cfg, "0005_fim_baselines_deviations")
+        assert _get_current_revision(engine) == "0005_fim_baselines_deviations"
+
+        inspector = sa.inspect(engine)
+        down_tables = set(inspector.get_table_names())
+        assert "incidents" not in down_tables
+        assert "incident_events" not in down_tables
+        assert "incident_evidence" not in down_tables
+        assert "incident_history" not in down_tables
+
+        # 6. Re-upgrade to 0006_incidents_and_evidence is idempotent
+        command.upgrade(alembic_cfg, "0006_incidents_and_evidence")
+        assert _get_current_revision(engine) == "0006_incidents_and_evidence"
+
+        inspector = sa.inspect(engine)
+        reup_tables = set(inspector.get_table_names())
+        assert "incidents" in reup_tables
+        assert "incident_events" in reup_tables
+        assert "incident_evidence" in reup_tables
+        assert "incident_history" in reup_tables
+
+        engine.dispose()
+
+
+class TestIncidentMigrationPostgreSQL:
+    """Test 0006_incidents_and_evidence against an isolated disposable PostgreSQL database."""
+
+    def test_upgrade_and_downgrade_incidents_postgres(
+        self, disposable_pg_url: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("OSIRIS_DATABASE_URL", disposable_pg_url)
+        monkeypatch.setattr(settings, "database_url", disposable_pg_url)
+
+        alembic_cfg = Config("alembic.ini")
+        alembic_cfg.set_main_option("sqlalchemy.url", disposable_pg_url)
+
+        # 1. Upgrade through 0005
+        command.upgrade(alembic_cfg, "0005_fim_baselines_deviations")
+        engine = sa.create_engine(disposable_pg_url)
+        assert _get_current_revision(engine) == "0005_fim_baselines_deviations"
+
+        # 2. Upgrade to 0006
+        command.upgrade(alembic_cfg, "0006_incidents_and_evidence")
+        assert _get_current_revision(engine) == "0006_incidents_and_evidence"
+
+        inspector = sa.inspect(engine)
+        tables = set(inspector.get_table_names())
+        assert "incidents" in tables
+        assert "incident_events" in tables
+        assert "incident_evidence" in tables
+        assert "incident_history" in tables
+
+        # Downgrade back to 0005
+        command.downgrade(alembic_cfg, "0005_fim_baselines_deviations")
+        assert _get_current_revision(engine) == "0005_fim_baselines_deviations"
+
+        inspector = sa.inspect(engine)
+        down_tables = set(inspector.get_table_names())
+        assert "incidents" not in down_tables
+        assert "incident_events" not in down_tables
+        assert "incident_evidence" not in down_tables
+        assert "incident_history" not in down_tables
+
+        # Re-upgrade to 0006
+        command.upgrade(alembic_cfg, "0006_incidents_and_evidence")
+        assert _get_current_revision(engine) == "0006_incidents_and_evidence"
 
         engine.dispose()

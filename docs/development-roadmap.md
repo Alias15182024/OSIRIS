@@ -419,19 +419,19 @@ the Event Processing Layer (Milestone 1.3).
 
 **Goal:** Organize alerts into investigable incidents.
 
-- [ ] Alert table migration
-- [ ] Incident table migration
-- [ ] Evidence table migration
-- [ ] Alert management API (list, filter, acknowledge)
-- [ ] Incident management API (create, update, assign, close)
-- [ ] Evidence association API
-- [ ] Alert and incident views in frontend
+- [x] Alert table migration (Implemented in Milestone 2.4 via `detections`)
+- [x] Incident table migration (`0006_incidents_and_evidence.py` -> `incidents`, `incident_events`, `incident_history`)
+- [x] Evidence table migration (`0006_incidents_and_evidence.py` -> `incident_evidence`)
+- [x] Alert management API (list, filter, acknowledge via `/api/detections`)
+- [x] Incident management API (create, update, assign, status transitions, severity escalation via `/api/incidents`)
+- [x] Evidence association API (detection, session, snapshot, fim, process, file, event, custom via `/api/incidents/{id}/evidence` and `/events`)
+- [x] Alert and incident views in frontend (`frontend/static/js/views/incidents.js`, semantic markup, zero innerHTML/eval/localStorage)
 
 **Testing Checkpoint:**
 - Alerts are created from detection rules
 - Alerts can be grouped into incidents
 - Evidence is correctly linked
-- Incident lifecycle (open → investigating → resolved) works
+- Incident lifecycle (open → investigating → contained → resolved → closed) works
 
 ---
 
@@ -486,7 +486,7 @@ Phase 2: Reconstruct & Detect
   2.3 Security/System Log Collector                     ← Completed
   2.4 Detection Engine                                  ← Completed
   2.5 File Integrity Monitoring                         ← Completed
-  2.6 Alert & Incident Management
+  2.6 Alert & Incident Management                       ← Completed
   2.7 Investigation Interface
   2.8 Database Enhancements
 ```

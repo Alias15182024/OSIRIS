@@ -288,3 +288,21 @@ To author a new detection rule:
    ```
 5. Synchronize the rules into the database via `DetectionService(session).sync_rules()`.
 6. Add corresponding unit test cases in `tests/unit/test_initial_rules.py` verifying both matching behavior and negative non-matching conditions.
+
+---
+
+## 10. Correlation & Incident Management Integration (Milestone 2.6)
+
+Detections represent atomic security findings. In Milestone 2.6, the `DetectionCorrelator` engine aggregates detections into higher-order investigation incidents:
+
+### Correlation Logic
+1. **Idempotency & Deduplication:** When a detection is processed, the correlator checks if it is already bound to an incident. If found, processing terminates idempotently without duplicating incidents or evidence links.
+2. **Host-Scoped Search:** The correlator queries open or investigating incidents on the **exact same host**. Detections on Host A can **never** attach to incidents on Host B.
+3. **Multi-Factor Correlation Rules:**
+   - **Shared Session Context:** Detection `session_id` matches an active session bound to the candidate incident.
+   - **Shared Process Context:** Detection `process_id` matches a process bound to the candidate incident.
+   - **Shared FIM Context:** Detection `fim_deviation_id` matches a file integrity deviation bound to the candidate incident.
+   - **Category Match within Window:** Detection category matches the incident category within the configured active investigation window (`window_seconds`, default 7200s / 2 hours).
+   - **Temporal Proximity Fallback:** Candidate incidents within 15 minutes (900s) on the same host are correlated.
+4. **Severity Escalation:** When an alert with a higher severity rank (e.g. `critical` vs `medium`) attaches to an existing incident, the incident's severity is automatically escalated and an audit trail entry is created in `incident_history`. Lower-severity alerts never downgrade incident severity.
+5. **Decoupled Acknowledgment:** Acknowledging or resolving individual detections does **not** close or resolve the incident; incident lifecycle states (`open` → `investigating` → `contained` → `resolved` → `closed`) are governed independently by investigators.
