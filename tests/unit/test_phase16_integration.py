@@ -263,6 +263,7 @@ class TestPhase16ApiContractCrossCheck:
             "/api/snapshots",
             "/api/timeline",
             "/api/detections",
+            "/api/fim",
         ]
         for js_file in JS_FILES:
             code = js_file.read_text(encoding="utf-8")

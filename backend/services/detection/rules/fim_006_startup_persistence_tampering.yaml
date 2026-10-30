@@ -1,0 +1,31 @@
+rule_id: OSIRIS-FIM-006
+name: System Startup and Cron Service Tampering
+description: Detects integrity deviations in systemd service units, cron jobs, or sysvinit startup scripts.
+category: file_integrity
+severity: high
+enabled: true
+version: 1
+rule_type: single_event
+explanation: Adversaries frequently drop or modify systemd units and cron entries to maintain reboot persistence.
+conditions:
+  all:
+    - field: event_type
+      operator: ==
+      value: "fim:deviation"
+    - any:
+        - field: object_path
+          operator: contains
+          value: "/etc/systemd/system/"
+        - field: object_path
+          operator: contains
+          value: "/etc/init.d/"
+        - field: object_path
+          operator: contains
+          value: "/etc/cron."
+        - field: object_path
+          operator: ==
+          value: "/etc/crontab"
+metadata:
+  mitre_technique: T1053.003
+  mitre_tactic: Persistence
+  author: OSIRIS Core Security Team

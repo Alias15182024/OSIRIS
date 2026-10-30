@@ -341,6 +341,7 @@ detections
 ├── evidence             JSON / JSONB NOT NULL  (Forensic context: cmdline, users, paths, session IDs)
 ├── dedup_hash           VARCHAR(64)  NOT NULL UNIQUE (SHA-256 deterministic deduplication)
 ├── status               VARCHAR(16)  NOT NULL DEFAULT 'new' (CHECK: new, acknowledged, resolved, false_positive)
+├── fim_deviation_id     UUID         NULLABLE FK → fim_deviations.id (ON DELETE SET NULL, use_alter=True)
 ├── acknowledged_at      TIMESTAMPTZ  NULLABLE
 ├── acknowledged_by      VARCHAR(64)  NULLABLE
 └── created_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW()
@@ -350,12 +351,104 @@ INDEX ix_detections_rule_id (rule_id)
 INDEX ix_detections_timestamp (timestamp)
 INDEX ix_detections_severity (severity)
 INDEX ix_detections_status (status)
+INDEX ix_detections_fim_deviation_id (fim_deviation_id)
 INDEX ix_detections_host_timestamp (host_id, timestamp)
 INDEX ix_detections_rule_timestamp (rule_id, timestamp)
 UNIQUE INDEX ix_detections_dedup_hash (dedup_hash)
 ```
 
-### 3.11 Incident (Phase 2)
+### 3.11 File Integrity Baseline (Phase 2 — Milestone 2.5)
+
+Represents a cryptographically validated point-in-time filesystem baseline for a host.
+
+```
+fim_baselines
+├── id                   UUID         PRIMARY KEY
+├── host_id              UUID         NOT NULL FK → hosts.id (ON DELETE CASCADE)
+├── version              INTEGER      NOT NULL DEFAULT 1
+├── status               VARCHAR(16)  NOT NULL DEFAULT 'active' (CHECK: active, superseded, revoked)
+├── path_scope           VARCHAR(1024)NOT NULL
+├── include_patterns     JSON / JSONB NOT NULL DEFAULT '[]'
+├── exclude_patterns     JSON / JSONB NOT NULL DEFAULT '[]'
+├── total_files          INTEGER      NOT NULL DEFAULT 0
+├── total_bytes          BIGINT       NOT NULL DEFAULT 0
+├── scan_duration_ms     INTEGER      NULLABLE
+├── baseline_metadata    JSON / JSONB NOT NULL DEFAULT '{}'
+├── created_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+└── updated_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+
+INDEX ix_fim_baselines_host_id (host_id)
+INDEX ix_fim_baselines_status (status)
+INDEX ix_fim_baselines_host_status (host_id, status)
+INDEX ix_fim_baselines_created_at (created_at)
+```
+
+### 3.12 File Integrity Baseline File (Phase 2 — Milestone 2.5)
+
+Individual file record within a cryptographic baseline, containing SHA-256 digest and filesystem attributes.
+
+```
+fim_baseline_files
+├── id                   UUID         PRIMARY KEY
+├── baseline_id          UUID         NOT NULL FK → fim_baselines.id (ON DELETE CASCADE)
+├── file_path            VARCHAR(1024)NOT NULL
+├── sha256_hash          VARCHAR(64)  NOT NULL
+├── sha1_hash            VARCHAR(40)  NULLABLE
+├── md5_hash             VARCHAR(32)  NULLABLE
+├── size_bytes           BIGINT       NOT NULL
+├── file_mode            VARCHAR(16)  NOT NULL
+├── uid                  INTEGER      NOT NULL
+├── gid                  INTEGER      NOT NULL
+├── mtime_epoch          DOUBLE PREC  NOT NULL
+├── is_symlink           BOOLEAN      NOT NULL DEFAULT FALSE
+├── symlink_target       VARCHAR(1024)NULLABLE
+├── attributes           JSON / JSONB NOT NULL DEFAULT '{}'
+└── created_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+
+INDEX ix_fim_baseline_files_baseline_id (baseline_id)
+INDEX ix_fim_baseline_files_file_path (file_path)
+INDEX ix_fim_baseline_files_sha256 (sha256_hash)
+UNIQUE (baseline_id, file_path)
+```
+
+### 3.13 File Integrity Deviation (Phase 2 — Milestone 2.5)
+
+Forensic integrity deviations observed during verification against a baseline, with bidirectional linkage to detections.
+
+```
+fim_deviations
+├── id                   UUID         PRIMARY KEY
+├── baseline_id          UUID         NOT NULL FK → fim_baselines.id (ON DELETE CASCADE)
+├── host_id              UUID         NOT NULL FK → hosts.id (ON DELETE CASCADE)
+├── detection_id         UUID         NULLABLE FK → detections.id (ON DELETE SET NULL, use_alter=True)
+├── file_path            VARCHAR(1024)NOT NULL
+├── deviation_type       VARCHAR(32)  NOT NULL (CHECK: modified, added, removed, permission_changed, ownership_changed)
+├── severity             VARCHAR(16)  NOT NULL (CHECK: critical, high, medium, low, info)
+├── detected_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+├── expected_sha256      VARCHAR(64)  NULLABLE
+├── observed_sha256      VARCHAR(64)  NULLABLE
+├── expected_size        BIGINT       NULLABLE
+├── observed_size        BIGINT       NULLABLE
+├── expected_mode        VARCHAR(16)  NULLABLE
+├── observed_mode        VARCHAR(16)  NULLABLE
+├── expected_uid         INTEGER      NULLABLE
+├── observed_uid         INTEGER      NULLABLE
+├── expected_gid         INTEGER      NULLABLE
+├── observed_gid         INTEGER      NULLABLE
+├── details              JSON / JSONB NOT NULL DEFAULT '{}'
+└── created_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+
+INDEX ix_fim_deviations_baseline_id (baseline_id)
+INDEX ix_fim_deviations_host_id (host_id)
+INDEX ix_fim_deviations_detection_id (detection_id)
+INDEX ix_fim_deviations_file_path (file_path)
+INDEX ix_fim_deviations_deviation_type (deviation_type)
+INDEX ix_fim_deviations_severity (severity)
+INDEX ix_fim_deviations_detected_at (detected_at)
+INDEX ix_fim_deviations_host_detected (host_id, detected_at)
+```
+
+### 3.14 Incident (Phase 2)
 
 ```
 incidents
@@ -371,7 +464,7 @@ incidents
 INDEX (status)
 ```
 
-### 3.12 Evidence (Phase 2)
+### 3.15 Evidence (Phase 2)
 
 ```
 evidence
@@ -384,40 +477,7 @@ evidence
 └── created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 ```
 
-### 3.13 File Integrity Baseline (Phase 2)
-
-```
-file_integrity_baselines
-├── id              UUID        PRIMARY KEY
-├── host_id         UUID        FK → hosts.id
-├── file_path       VARCHAR     NOT NULL
-├── hash_sha256     VARCHAR     NOT NULL
-├── file_size       BIGINT
-├── permissions     VARCHAR
-├── owner_uid       INTEGER
-├── baseline_at     TIMESTAMPTZ NOT NULL
-└── created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-UNIQUE (host_id, file_path)
-```
-
-### 3.14 File Integrity Observation (Phase 2)
-
-```
-file_integrity_observations
-├── id              UUID        PRIMARY KEY
-├── baseline_id     UUID        FK → file_integrity_baselines.id
-├── host_id         UUID        FK → hosts.id
-├── file_path       VARCHAR     NOT NULL
-├── hash_sha256     VARCHAR     NOT NULL
-├── file_size       BIGINT
-├── permissions     VARCHAR
-├── owner_uid       INTEGER
-├── observed_at     TIMESTAMPTZ NOT NULL
-├── match           BOOLEAN     NOT NULL
-└── created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-```
-
-### 3.15 Application User
+### 3.16 Application User
 
 ```
 app_users

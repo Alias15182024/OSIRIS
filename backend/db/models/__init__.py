@@ -9,6 +9,9 @@ from backend.db.models.detection import Detection
 from backend.db.models.detection_rule import DetectionRule
 from backend.db.models.event import Event
 from backend.db.models.file import File
+from backend.db.models.fim_baseline import FimBaseline
+from backend.db.models.fim_baseline_file import FimBaselineFile
+from backend.db.models.fim_deviation import FimDeviation
 from backend.db.models.host import Host
 from backend.db.models.linux_user import LinuxUser
 from backend.db.models.process import Process
@@ -23,6 +26,9 @@ __all__ = [
     "DetectionRule",
     "Event",
     "File",
+    "FimBaseline",
+    "FimBaselineFile",
+    "FimDeviation",
     "Host",
     "LinuxUser",
     "Process",

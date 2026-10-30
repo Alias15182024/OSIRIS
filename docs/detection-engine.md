@@ -226,6 +226,26 @@ The engine ships with 9 production detection rules covering high-risk Linux atta
    - Detects process access or file operations targeting sensitive credential databases and private keys (`/etc/shadow`, `/etc/gshadow`, `id_rsa`, `id_ed25519`).
    - MITRE: `T1003.008` (Credential Access: /etc/passwd and /etc/shadow)
 
+### File Integrity Monitoring (Milestone 2.5)
+10. **`OSIRIS-FIM-001` (Critical) — Protected Configuration File Tampering:**
+    - Detects modification or removal of security-critical system configurations (`/etc/pam.d/*`, `/etc/security/*`, `/etc/login.defs`, `/etc/sudoers*`).
+    - MITRE: `T1565.001` (Impact: Stored Data Manipulation)
+11. **`OSIRIS-FIM-002` (Critical) — Sensitive Authentication Database Tampering:**
+    - Detects unauthorized modification or removal of core user/group credential databases (`/etc/shadow`, `/etc/gshadow`, `/etc/passwd`, `/etc/group`).
+    - MITRE: `T1098` (Persistence: Account Manipulation)
+12. **`OSIRIS-FIM-003` (Critical) — Core System Executable Modification or Addition:**
+    - Detects modification, replacement, or injection of executables in system binary directories (`/bin/*`, `/sbin/*`, `/usr/bin/*`, `/usr/sbin/*`).
+    - MITRE: `T1574.006` (Persistence: Hijack Execution Flow)
+13. **`OSIRIS-FIM-004` (High) — Suspicious Permission or SUID/SGID Bit Tampering:**
+    - Detects filesystem permission tampering that introduces setuid or setgid bits (`4000`/`2000`) or world-writable bits.
+    - MITRE: `T1548.001` (Privilege Escalation: Setuid and Setgid)
+14. **`OSIRIS-FIM-005` (High) — SSH Authorized Keys or Host Keys Tampering:**
+    - Detects modifications to SSH trust stores (`.ssh/authorized_keys`, `/etc/ssh/ssh_host_*`).
+    - MITRE: `T1098.004` (Persistence: SSH Authorized Keys)
+15. **`OSIRIS-FIM-006` (High) — System Startup Persistence Tampering:**
+    - Detects modifications or new files in persistence directories (`/etc/cron*`, `/etc/systemd/system/*`, `/etc/init.d/*`).
+    - MITRE: `T1053.003` (Persistence: Scheduled Task/Job: Cron)
+
 ---
 
 ## 8. Detection REST API Reference

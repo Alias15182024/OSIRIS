@@ -684,3 +684,87 @@ Nine production security rules:
 - **`tests/unit/test_phase16_integration.py` (26 passed)**: Cross-view API integration and route consistency.
 - **Apple JavaScriptCore (`jsc`) Validation**: All 10 frontend JavaScript files validated with 0 syntax errors.
 
+---
+
+# Phase 2 Milestone 2.5: File Integrity Monitoring (FIM) Walkthrough
+
+## 1. Architecture & Component Summary
+
+### 1.1 Database Schema & Reversible Migrations ([`database/migrations/versions/0005_fim_baselines_and_deviations.py`](file:///Users/alias/Desktop/OSIRIS/database/migrations/versions/0005_fim_baselines_and_deviations.py))
+- **`fim_baselines`**: Point-in-time cryptographic filesystem snapshots scoped by host and path.
+  - Fields: `id`, `host_id`, `version`, `status` (`active`, `superseded`, `revoked`), `path_scope`, `include_patterns`, `exclude_patterns`, `total_files`, `total_bytes`, `scan_duration_ms`, `baseline_metadata`.
+- **`fim_baseline_files`**: Per-file cryptographic digest and metadata entries.
+  - Fields: `id`, `baseline_id`, `file_path`, `sha256_hash`, `sha1_hash`, `md5_hash`, `size_bytes`, `file_mode`, `uid`, `gid`, `mtime_epoch`, `is_symlink`, `symlink_target`, `attributes`.
+  - Enforces `UNIQUE(baseline_id, file_path)`.
+- **`fim_deviations`**: Detected filesystem anomalies between live storage and baseline state.
+  - Fields: `id`, `baseline_id`, `host_id`, `detection_id`, `file_path`, `deviation_type` (`modified`, `added`, `removed`, `permission_changed`, `ownership_changed`), `severity`, `detected_at`, `expected_sha256`, `observed_sha256`, `expected_size`, `observed_size`, `expected_mode`, `observed_mode`, `expected_uid`, `observed_uid`, `expected_gid`, `observed_gid`, `details`.
+- **Bidirectional Detection Link**:
+  - `detections.fim_deviation_id` with `use_alter=True` links detections to deviations, while `fim_deviations.detection_id` links back to detections.
+
+### 1.2 Cryptographic Fingerprinting Service ([`backend/services/fim/fingerprint.py`](file:///Users/alias/Desktop/OSIRIS/backend/services/fim/fingerprint.py))
+- **Multi-Algorithm Hashing**: Primary SHA-256 with optional secondary SHA-1 and MD5 calculation in a single pass.
+- **Chunked Streaming**: Streams files in 64 KB buffers, ensuring low memory footprint regardless of file size.
+- **TOCTOU Race Detection**: Captures `stat` before and after stream hashing to detect concurrent modification during hash generation.
+- **Symlink Protection**: Safe handling of symbolic links (`follow_symlinks=False` default) recording link targets without traversing outside scope.
+- **Path Normalization**: Resolves and canonicalizes POSIX paths.
+
+### 1.3 Baseline Filesystem Scanner ([`backend/services/fim/scanner.py`](file:///Users/alias/Desktop/OSIRIS/backend/services/fim/scanner.py))
+- **Configurable Scope & Filters**: Supports root directory path, include glob patterns, and exclude glob patterns.
+- **Safety Caps**: Enforces maximum directory recursion depth (default 32) and maximum file size (default 100 MB).
+- **Graceful Error Recovery**: Resilient against permission denied errors, missing files, and broken links, capturing scan summaries with error counts.
+
+### 1.4 Differential Integrity Comparator ([`backend/services/fim/comparator.py`](file:///Users/alias/Desktop/OSIRIS/backend/services/fim/comparator.py))
+- **Change Classification**: Evaluates live scan fingerprints against baseline file records.
+  - `modified`: SHA-256 hash or size changed.
+  - `added`: File exists in live filesystem but not in baseline.
+  - `removed`: File exists in baseline but missing from live filesystem.
+  - `permission_changed`: File mode bits or SUID/SGID bits modified.
+  - `ownership_changed`: UID or GID modified.
+- **Granular Check Configuration**: Configurable verification toggles (`check_contents`, `check_permissions`, `check_ownership`).
+
+### 1.5 FIM Service & Declarative Detection Integration ([`backend/services/fim/service.py`](file:///Users/alias/Desktop/OSIRIS/backend/services/fim/service.py))
+- **Baseline Lifecycle**: Creates baselines, stores files in bulk, supersedes older active baselines for the same host.
+- **On-Demand Verification**: Executes differential comparison and automatically transforms deviations into normalized telemetry events.
+- **Declarative Security Detection Rules**:
+  1. `OSIRIS-FIM-001` (Critical): Protected Configuration File Tampering (`/etc/pam.d/*`, `/etc/security/*`, `/etc/login.defs`, `/etc/sudoers*`).
+  2. `OSIRIS-FIM-002` (Critical): Sensitive Authentication Database Tampering (`/etc/shadow`, `/etc/gshadow`, `/etc/passwd`, `/etc/group`).
+  3. `OSIRIS-FIM-003` (Critical): Core System Executable Modification or Addition (`/bin/*`, `/sbin/*`, `/usr/bin/*`, `/usr/sbin/*`).
+  4. `OSIRIS-FIM-004` (High): Suspicious Permission or SUID/SGID Bit Tampering.
+  5. `OSIRIS-FIM-005` (High): SSH Authorized Keys or Host Keys Tampering (`.ssh/authorized_keys`, `/etc/ssh/ssh_host_*`).
+  6. `OSIRIS-FIM-006` (High): System Startup Persistence Tampering (`/etc/cron*`, `/etc/systemd/system/*`, `/etc/init.d/*`).
+- **Detection Association**: Newly triggered detections are bidirectionally associated with their causative `FimDeviation` records.
+
+### 1.6 REST API ([`backend/api/routes/fim.py`](file:///Users/alias/Desktop/OSIRIS/backend/api/routes/fim.py))
+- `GET /api/fim/baselines`: Query paginated baselines filtered by `host_id` and `status`.
+- `POST /api/fim/baselines`: Create and record a new cryptographic baseline.
+- `GET /api/fim/baselines/{id}`: Retrieve baseline metadata and summary.
+- `GET /api/fim/baselines/{id}/files`: Paginated file entries for a baseline with path filtering.
+- `GET /api/fim/deviations`: Query paginated deviations filtered by `host_id`, `baseline_id`, `file_path`, `deviation_type`, `severity`.
+- `GET /api/fim/deviations/{id}`: Detailed view of a single deviation with expected vs. observed differences.
+- `POST /api/fim/verify`: Trigger an on-demand verification check for a host.
+
+### 1.7 Frontend FIM Dashboard ([`frontend/static/js/views/fim.js`](file:///Users/alias/Desktop/OSIRIS/frontend/static/js/views/fim.js))
+- Modern dark-themed dashboard panel with sub-navigation tabs ("Integrity Deviations" and "Filesystem Baselines").
+- Summary metric stat cards (Total Baselines, Active Deviations, Critical Deviations, Files Monitored).
+- Interactive filter forms with URLSearchParams query sanitization.
+- Deviation detail modal displaying side-by-side expected vs observed forensic comparisons.
+- Baseline detail modal showing scan metrics and monitored file samples.
+- Trigger verification modal for on-demand integrity verification runs.
+- Strict security adherence: zero `innerHTML`, zero `localStorage`, zero `eval`. Validated cleanly in JavaScriptCore.
+
+---
+
+## 2. Test Verification & Results
+
+### 2.1 Workspace Pytest Suite
+All unit, migration, integration, and contract test suites execute cleanly with zero failures.
+
+### 2.2 Milestone 2.5 Targeted Test Suites
+- **`tests/unit/test_fim_fingerprint.py` (17 passed)**: SHA-256 calculation, optional secondary digests (SHA-1/MD5), file descriptor level validation with `O_NOFOLLOW` and `O_NONBLOCK`, TOCTOU modification detection, symlink swap detection, chunked streaming, permission handling.
+- **`tests/unit/test_fim_scanner.py` (11 passed)**: Recursive scanning, path inclusion/exclusion globs, segment/folder name exclusions, directory resource limiting with `max_files`, root permission errors, walk errors marking partial scan completion.
+- **`tests/unit/test_fim_comparator.py` (13 passed)**: Modified, added, deleted, permission, and ownership deviation detection, directory permission/ownership changes, file type transition detection, unreadable file detection, partial scan deletion prevention.
+- **`tests/unit/test_fim_detection_integration.py` (6 passed)**: Rule evaluation against deviations across all 6 FIM rules, detection creation and bidirectional FK linkage, evidence enrichment with expected and observed metadata.
+- **`tests/unit/test_fim_api.py` (11 passed)**: Baseline creation, baseline listing, baseline file inspection, deviation listing, deviation details, verification trigger endpoint, authentication enforcement, path format validation, and out-of-scope verification rejection.
+- **`tests/unit/test_fim_view_contract.py` (10 passed)**: Markup element existence, security contract verification (zero innerHTML, zero localStorage, zero eval), Apple JavaScriptCore syntax execution.
+- **`tests/unit/test_migrations.py` (11 passed)**: Full upgrade and downgrade testing for revision `0005_fim_baselines_deviations` on both SQLite and PostgreSQL.
+

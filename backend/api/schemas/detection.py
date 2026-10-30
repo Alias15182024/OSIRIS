@@ -60,6 +60,7 @@ class DetectionResponse(BaseModel):
     event_id: Optional[UUID] = None
     process_id: Optional[UUID] = None
     session_id: Optional[UUID] = None
+    fim_deviation_id: Optional[UUID] = None
     timestamp: datetime
     severity: str
     title: str
@@ -94,6 +95,7 @@ class DetectionResponse(BaseModel):
             event_id=detection.event_id,
             process_id=detection.process_id,
             session_id=detection.session_id,
+            fim_deviation_id=getattr(detection, "fim_deviation_id", None),
             timestamp=detection.timestamp,
             severity=detection.severity,
             title=detection.title,

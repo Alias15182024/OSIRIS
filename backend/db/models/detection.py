@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from backend.db.models.app_user import AppUser
     from backend.db.models.detection_rule import DetectionRule
     from backend.db.models.event import Event
+    from backend.db.models.fim_deviation import FimDeviation
     from backend.db.models.host import Host
     from backend.db.models.process import Process
     from backend.db.models.user_session import UserSession
@@ -44,6 +45,7 @@ class Detection(Base):
         Index("ix_detections_status", "status"),
         Index("ix_detections_category", "category"),
         Index("ix_detections_dedup_hash", "dedup_hash", unique=True),
+        Index("ix_detections_fim_deviation_id", "fim_deviation_id"),
         CheckConstraint(
             "severity IN ('info', 'low', 'medium', 'high', 'critical')",
             name="chk_detection_severity",
@@ -78,6 +80,9 @@ class Detection(Base):
     )
     session_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("sessions.id", ondelete="SET NULL"), nullable=True
+    )
+    fim_deviation_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("fim_deviations.id", ondelete="SET NULL", use_alter=True), nullable=True
     )
     timestamp: Mapped[datetime] = mapped_column(
         nullable=False
@@ -131,4 +136,8 @@ class Detection(Base):
     event: Mapped[Optional["Event"]] = relationship()
     process: Mapped[Optional["Process"]] = relationship()
     session: Mapped[Optional["UserSession"]] = relationship()
+    fim_deviation: Mapped[Optional["FimDeviation"]] = relationship(
+        back_populates="detections",
+        foreign_keys=[fim_deviation_id]
+    )
     acknowledged_by: Mapped[Optional["AppUser"]] = relationship()

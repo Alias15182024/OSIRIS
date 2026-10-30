@@ -15,6 +15,8 @@ if TYPE_CHECKING:
     from backend.db.models.detection import Detection
     from backend.db.models.event import Event
     from backend.db.models.file import File
+    from backend.db.models.fim_baseline import FimBaseline
+    from backend.db.models.fim_deviation import FimDeviation
     from backend.db.models.linux_user import LinuxUser
     from backend.db.models.process import Process
     from backend.db.models.resource_snapshot import ResourceSnapshot
@@ -69,5 +71,11 @@ class Host(Base):
         back_populates="host"
     )
     detections: Mapped[list["Detection"]] = relationship(
+        back_populates="host"
+    )
+    fim_baselines: Mapped[list["FimBaseline"]] = relationship(
+        back_populates="host"
+    )
+    fim_deviations: Mapped[list["FimDeviation"]] = relationship(
         back_populates="host"
     )

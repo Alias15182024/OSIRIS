@@ -131,6 +131,101 @@ _detections_table = sa.table(
     sa.column("acknowledged_by_id", sa.Uuid),
 )
 
+_detections_table_0005 = sa.table(
+    "detections",
+    sa.column("id", sa.Uuid),
+    sa.column("rule_id", sa.Uuid),
+    sa.column("rule_version", sa.Integer),
+    sa.column("host_id", sa.Uuid),
+    sa.column("event_id", sa.Uuid),
+    sa.column("process_id", sa.Uuid),
+    sa.column("session_id", sa.Uuid),
+    sa.column("fim_deviation_id", sa.Uuid),
+    sa.column("timestamp", sa.DateTime(timezone=True)),
+    sa.column("severity", sa.String),
+    sa.column("title", sa.String),
+    sa.column("description", sa.String),
+    sa.column("category", sa.String),
+    sa.column("status", sa.String),
+    sa.column("notification_status", sa.String),
+    sa.column("matched_conditions", sa.JSON),
+    sa.column("evidence", sa.JSON),
+    sa.column("dedup_hash", sa.String),
+    sa.column("created_at", sa.DateTime(timezone=True)),
+    sa.column("acknowledged_at", sa.DateTime(timezone=True)),
+    sa.column("acknowledged_by_id", sa.Uuid),
+)
+
+_fim_baselines_table = sa.table(
+    "fim_baselines",
+    sa.column("id", sa.Uuid),
+    sa.column("host_id", sa.Uuid),
+    sa.column("version", sa.Integer),
+    sa.column("status", sa.String),
+    sa.column("path_scope", sa.JSON),
+    sa.column("include_patterns", sa.JSON),
+    sa.column("exclude_patterns", sa.JSON),
+    sa.column("total_files", sa.Integer),
+    sa.column("total_bytes", sa.BigInteger),
+    sa.column("scan_duration_ms", sa.BigInteger),
+    sa.column("error_message", sa.Text),
+    sa.column("baseline_metadata", sa.JSON),
+    sa.column("baseline_at", sa.DateTime(timezone=True)),
+    sa.column("completed_at", sa.DateTime(timezone=True)),
+    sa.column("created_at", sa.DateTime(timezone=True)),
+)
+
+_fim_baseline_files_table = sa.table(
+    "fim_baseline_files",
+    sa.column("id", sa.Uuid),
+    sa.column("baseline_id", sa.Uuid),
+    sa.column("host_id", sa.Uuid),
+    sa.column("file_path", sa.String),
+    sa.column("file_name", sa.String),
+    sa.column("file_type", sa.String),
+    sa.column("hash_sha256", sa.String),
+    sa.column("hash_sha1", sa.String),
+    sa.column("hash_md5", sa.String),
+    sa.column("file_size", sa.BigInteger),
+    sa.column("permissions", sa.String),
+    sa.column("mode", sa.Integer),
+    sa.column("owner_uid", sa.Integer),
+    sa.column("owner_gid", sa.Integer),
+    sa.column("owner_user", sa.String),
+    sa.column("owner_group", sa.String),
+    sa.column("mtime", sa.DateTime(timezone=True)),
+    sa.column("ctime", sa.DateTime(timezone=True)),
+    sa.column("inode", sa.BigInteger),
+    sa.column("device_id", sa.BigInteger),
+    sa.column("symlink_target", sa.String),
+    sa.column("is_suid", sa.Boolean),
+    sa.column("is_sgid", sa.Boolean),
+    sa.column("is_executable", sa.Boolean),
+    sa.column("fingerprint_metadata", sa.JSON),
+    sa.column("created_at", sa.DateTime(timezone=True)),
+)
+
+_fim_deviations_table = sa.table(
+    "fim_deviations",
+    sa.column("id", sa.Uuid),
+    sa.column("host_id", sa.Uuid),
+    sa.column("baseline_id", sa.Uuid),
+    sa.column("baseline_file_id", sa.Uuid),
+    sa.column("detection_id", sa.Uuid),
+    sa.column("file_path", sa.String),
+    sa.column("file_type", sa.String),
+    sa.column("deviation_type", sa.String),
+    sa.column("severity", sa.String),
+    sa.column("is_content_modified", sa.Boolean),
+    sa.column("is_metadata_modified", sa.Boolean),
+    sa.column("expected_values", sa.JSON),
+    sa.column("observed_values", sa.JSON),
+    sa.column("summary", sa.String),
+    sa.column("explanation", sa.Text),
+    sa.column("detected_at", sa.DateTime(timezone=True)),
+    sa.column("created_at", sa.DateTime(timezone=True)),
+)
+
 
 def _populate_test_files(engine: sa.Engine, host_id: uuid.UUID) -> dict[str, uuid.UUID]:
     """Insert test records with legacy, canonical, and edge-case file_types."""
@@ -1140,5 +1235,250 @@ class TestDetectionsAndRulesMigrationPostgreSQL:
         # Re-upgrade to 0004
         command.upgrade(alembic_cfg, "0004_detections_and_rules")
         assert _get_current_revision(engine) == "0004_detections_and_rules"
+
+        engine.dispose()
+
+
+class TestFimMigrationSQLite:
+    """Test 0005_fim_baselines_and_deviations migration against isolated SQLite database."""
+
+    def test_upgrade_and_downgrade_fim_sqlite(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        db_path = tmp_path / "test_fim_migration.db"
+        sqlite_url = f"sqlite:///{db_path}"
+
+        monkeypatch.setenv("OSIRIS_DATABASE_URL", sqlite_url)
+        monkeypatch.setattr(settings, "database_url", sqlite_url)
+
+        alembic_cfg = Config("alembic.ini")
+        alembic_cfg.set_main_option("sqlalchemy.url", sqlite_url)
+
+        # 1. Upgrade through 0004_detections_and_rules
+        command.upgrade(alembic_cfg, "0004_detections_and_rules")
+        engine = sa.create_engine(sqlite_url)
+        assert _get_current_revision(engine) == "0004_detections_and_rules"
+
+        # 2. Upgrade to 0005_fim_baselines_deviations
+        command.upgrade(alembic_cfg, "0005_fim_baselines_deviations")
+        assert _get_current_revision(engine) == "0005_fim_baselines_deviations"
+
+        # 3. Verify tables and columns exist
+        inspector = sa.inspect(engine)
+        tables = set(inspector.get_table_names())
+        assert "fim_baselines" in tables
+        assert "fim_baseline_files" in tables
+        assert "fim_deviations" in tables
+
+        detection_cols = {col["name"] for col in inspector.get_columns("detections")}
+        assert "fim_deviation_id" in detection_cols
+
+        # 4. Insert records across all tables and verify linkage
+        now = _utcnow()
+        host_id = uuid.uuid4()
+        baseline_id = uuid.uuid4()
+        file_id = uuid.uuid4()
+        deviation_id = uuid.uuid4()
+        rule_db_id = uuid.uuid4()
+        detection_id = uuid.uuid4()
+
+        with engine.begin() as conn:
+            conn.execute(
+                _hosts_table.insert().values(
+                    id=host_id,
+                    hostname="sqlite-fim-host",
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                _fim_baselines_table.insert().values(
+                    id=baseline_id,
+                    host_id=host_id,
+                    version=1,
+                    status="completed",
+                    path_scope=["/etc", "/bin"],
+                    include_patterns=None,
+                    exclude_patterns=[".git"],
+                    total_files=1,
+                    total_bytes=1024,
+                    scan_duration_ms=45,
+                    error_message=None,
+                    baseline_metadata={"scanner": "fim_scanner_v1"},
+                    baseline_at=now,
+                    completed_at=now,
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                _fim_baseline_files_table.insert().values(
+                    id=file_id,
+                    baseline_id=baseline_id,
+                    host_id=host_id,
+                    file_path="/etc/passwd",
+                    file_name="passwd",
+                    file_type="file",
+                    hash_sha256="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                    hash_sha1=None,
+                    hash_md5=None,
+                    file_size=1024,
+                    permissions="0644",
+                    mode=0o100644,
+                    owner_uid=0,
+                    owner_gid=0,
+                    owner_user="root",
+                    owner_group="root",
+                    mtime=now,
+                    ctime=now,
+                    inode=123456,
+                    device_id=1,
+                    symlink_target=None,
+                    is_suid=False,
+                    is_sgid=False,
+                    is_executable=False,
+                    fingerprint_metadata=None,
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                _fim_deviations_table.insert().values(
+                    id=deviation_id,
+                    host_id=host_id,
+                    baseline_id=baseline_id,
+                    baseline_file_id=file_id,
+                    detection_id=None,
+                    file_path="/etc/passwd",
+                    file_type="file",
+                    deviation_type="modified_file",
+                    severity="critical",
+                    is_content_modified=True,
+                    is_metadata_modified=False,
+                    expected_values={"sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+                    observed_values={"sha256": "b5bb9d8014a0f9b1d61e21e796d78dccdf1352f23cd32812f4850b878ae4944c"},
+                    summary="File /etc/passwd content modified",
+                    explanation="Checksum mismatch detected on /etc/passwd.",
+                    detected_at=now,
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                _detection_rules_table.insert().values(
+                    id=rule_db_id,
+                    rule_id="RULE-FIM-001",
+                    name="Passwd Tampering",
+                    description="Passwd modified",
+                    category="file_integrity",
+                    severity="critical",
+                    enabled=True,
+                    version=1,
+                    rule_type="single_event",
+                    conditions={"all": [{"field": "object_path", "operator": "==", "value": "/etc/passwd"}]},
+                    sequence_conditions=None,
+                    time_window_seconds=None,
+                    rule_metadata=None,
+                    created_at=now,
+                    updated_at=None,
+                )
+            )
+            conn.execute(
+                _detections_table_0005.insert().values(
+                    id=detection_id,
+                    rule_id=rule_db_id,
+                    rule_version=1,
+                    host_id=host_id,
+                    event_id=None,
+                    process_id=None,
+                    session_id=None,
+                    fim_deviation_id=deviation_id,
+                    timestamp=now,
+                    severity="critical",
+                    title="Passwd Tampering Detected",
+                    description="FIM detected change in /etc/passwd",
+                    category="file_integrity",
+                    status="open",
+                    notification_status="pending",
+                    matched_conditions={"conditions": []},
+                    evidence={"path": "/etc/passwd"},
+                    dedup_hash="fimdeduphash123",
+                    created_at=now,
+                    acknowledged_at=None,
+                    acknowledged_by_id=None,
+                )
+            )
+
+        with engine.connect() as conn:
+            dev_row = conn.execute(
+                sa.select(_fim_deviations_table).where(_fim_deviations_table.c.id == deviation_id)
+            ).one()
+            assert dev_row.deviation_type == "modified_file"
+            assert dev_row.is_content_modified is True
+
+            det_row = conn.execute(
+                sa.select(_detections_table_0005).where(_detections_table_0005.c.id == detection_id)
+            ).one()
+            assert det_row.fim_deviation_id == deviation_id
+
+        # 5. Downgrade back to 0004_detections_and_rules
+        command.downgrade(alembic_cfg, "0004_detections_and_rules")
+        assert _get_current_revision(engine) == "0004_detections_and_rules"
+
+        inspector = sa.inspect(engine)
+        down_tables = set(inspector.get_table_names())
+        assert "fim_baselines" not in down_tables
+        assert "fim_baseline_files" not in down_tables
+        assert "fim_deviations" not in down_tables
+
+        # 6. Re-upgrade to 0005_fim_baselines_deviations is idempotent
+        command.upgrade(alembic_cfg, "0005_fim_baselines_deviations")
+        assert _get_current_revision(engine) == "0005_fim_baselines_deviations"
+
+        inspector = sa.inspect(engine)
+        reup_tables = set(inspector.get_table_names())
+        assert "fim_baselines" in reup_tables
+        assert "fim_baseline_files" in reup_tables
+        assert "fim_deviations" in reup_tables
+
+        engine.dispose()
+
+
+class TestFimMigrationPostgreSQL:
+    """Test 0005_fim_baselines_and_deviations against an isolated disposable PostgreSQL database."""
+
+    def test_upgrade_and_downgrade_fim_postgres(
+        self, disposable_pg_url: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("OSIRIS_DATABASE_URL", disposable_pg_url)
+        monkeypatch.setattr(settings, "database_url", disposable_pg_url)
+
+        alembic_cfg = Config("alembic.ini")
+        alembic_cfg.set_main_option("sqlalchemy.url", disposable_pg_url)
+
+        # 1. Upgrade through 0004
+        command.upgrade(alembic_cfg, "0004_detections_and_rules")
+        engine = sa.create_engine(disposable_pg_url)
+        assert _get_current_revision(engine) == "0004_detections_and_rules"
+
+        # 2. Upgrade to 0005
+        command.upgrade(alembic_cfg, "0005_fim_baselines_deviations")
+        assert _get_current_revision(engine) == "0005_fim_baselines_deviations"
+
+        inspector = sa.inspect(engine)
+        tables = set(inspector.get_table_names())
+        assert "fim_baselines" in tables
+        assert "fim_baseline_files" in tables
+        assert "fim_deviations" in tables
+
+        # Downgrade back to 0004
+        command.downgrade(alembic_cfg, "0004_detections_and_rules")
+        assert _get_current_revision(engine) == "0004_detections_and_rules"
+
+        inspector = sa.inspect(engine)
+        down_tables = set(inspector.get_table_names())
+        assert "fim_baselines" not in down_tables
+        assert "fim_baseline_files" not in down_tables
+        assert "fim_deviations" not in down_tables
+
+        # Re-upgrade to 0005
+        command.upgrade(alembic_cfg, "0005_fim_baselines_deviations")
+        assert _get_current_revision(engine) == "0005_fim_baselines_deviations"
 
         engine.dispose()

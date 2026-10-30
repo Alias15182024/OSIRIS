@@ -45,6 +45,7 @@
         timeline: document.getElementById('view-timeline'),
         sessions: document.getElementById('view-sessions'),
         detections: document.getElementById('view-detections'),
+        fim: document.getElementById('view-fim'),
       },
 
       // Modal elements
@@ -102,6 +103,11 @@
     if (window.OsirisDetections && typeof window.OsirisDetections.updateSummaryStats === 'function') {
       window.OsirisDetections.updateSummaryStats();
     }
+
+    // Hydrate FIM stats badge if available
+    if (window.OsirisFim && typeof window.OsirisFim.updateSummaryStats === 'function') {
+      window.OsirisFim.updateSummaryStats();
+    }
   }
 
   /**
@@ -154,6 +160,11 @@
     // Reset files data when unauthenticated
     if (window.OsirisFiles && typeof window.OsirisFiles.resetFiles === 'function') {
       window.OsirisFiles.resetFiles();
+    }
+
+    // Reset FIM data when unauthenticated
+    if (window.OsirisFim && typeof window.OsirisFim.resetFim === 'function') {
+      window.OsirisFim.resetFim();
     }
   }
 
@@ -365,6 +376,11 @@
     // Load detections data when detections view becomes active
     if (viewName === 'detections' && window.OsirisDetections && typeof window.OsirisDetections.loadDetections === 'function') {
       window.OsirisDetections.loadDetections();
+    }
+
+    // Load FIM data when fim view becomes active
+    if (viewName === 'fim' && window.OsirisFim && typeof window.OsirisFim.loadFim === 'function') {
+      window.OsirisFim.loadFim();
     }
   }
 

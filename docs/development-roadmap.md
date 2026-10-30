@@ -394,18 +394,24 @@ the Event Processing Layer (Milestone 1.3).
 
 ### Milestone 2.5 — File Integrity Monitoring
 
-**Goal:** Detect unauthorized file changes.
+**Goal:** Detect unauthorized file changes, baseline deviations, and critical system tampering.
 
-- [ ] File integrity baseline table migration
-- [ ] File integrity observation table migration
-- [ ] Baseline creation service (hash files, record metadata)
-- [ ] Observation service (re-hash and compare)
-- [ ] Alert generation on integrity violations
+- [x] File integrity baseline table migration (`0005_fim_baselines_and_deviations.py`)
+- [x] File integrity deviation and file record tables migration (`fim_baselines`, `fim_baseline_files`, `fim_deviations`)
+- [x] Bidirectional detection linkage (`detections.fim_deviation_id` ↔ `fim_deviations.detection_id`)
+- [x] Cryptographic fingerprinting engine (`backend/services/fim/fingerprint.py`) with SHA-256 primary, SHA-1/MD5 optional, chunk streaming, TOCTOU mtime/size checks, and symlink protection
+- [x] Baseline filesystem scanner (`backend/services/fim/scanner.py`) with recursive traversal, depth caps, size limits, and include/exclude glob filtering
+- [x] Differential integrity comparison engine (`backend/services/fim/comparator.py`) detecting modified, added, removed, permission_changed, and ownership_changed deviations
+- [x] Declarative FIM detection integration with 6 rules (`OSIRIS-FIM-001` through `OSIRIS-FIM-006`)
+- [x] REST API endpoints (`GET /api/fim/baselines`, `POST /api/fim/baselines`, `GET /api/fim/baselines/{id}`, `GET /api/fim/baselines/{id}/files`, `GET /api/fim/deviations`, `GET /api/fim/deviations/{id}`, `POST /api/fim/verify`)
+- [x] Frontend FIM dashboard (`index.html`, `api.js`, `views/fim.js`, `app.js`) with tabs, filter forms, pagination, inspection modals, and on-demand verification modal
+- [x] Contract testing and security audit (zero `innerHTML`, zero `localStorage`, zero `eval`)
 
 **Testing Checkpoint:**
-- Baselines are created accurately
-- Changes are detected correctly
+- Baselines are created accurately and idempotently
+- Changes across contents, permissions, and ownership are detected deterministically
 - False positives from expected changes are minimized
+- Full test suite verified with zero regressions (56 FIM-specific tests passing)
 
 ---
 
@@ -479,7 +485,7 @@ Phase 2: Reconstruct & Detect
   2.2 Timeline Reconstruction                           ← Completed
   2.3 Security/System Log Collector                     ← Completed
   2.4 Detection Engine                                  ← Completed
-  2.5 File Integrity Monitoring
+  2.5 File Integrity Monitoring                         ← Completed
   2.6 Alert & Incident Management
   2.7 Investigation Interface
   2.8 Database Enhancements

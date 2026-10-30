@@ -1,0 +1,28 @@
+rule_id: OSIRIS-FIM-005
+name: SSH Authorized Keys or Configuration Tampering
+description: Detects alterations to SSH authorized_keys files, host keys, or sshd configuration.
+category: file_integrity
+severity: critical
+enabled: true
+version: 1
+rule_type: single_event
+explanation: Modifying authorized_keys allows an adversary to insert backdoor SSH public keys for persistent interactive access.
+conditions:
+  all:
+    - field: event_type
+      operator: ==
+      value: "fim:deviation"
+    - any:
+        - field: object_path
+          operator: contains
+          value: "authorized_keys"
+        - field: object_path
+          operator: contains
+          value: "/etc/ssh/ssh_host_"
+        - field: object_path
+          operator: ==
+          value: "/etc/ssh/sshd_config"
+metadata:
+  mitre_technique: T1098.004
+  mitre_tactic: Persistence
+  author: OSIRIS Core Security Team

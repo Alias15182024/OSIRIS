@@ -13,6 +13,7 @@ from backend.api.routes.auth import router as auth_router
 from backend.api.routes.detections import router as detections_router
 from backend.api.routes.events import router as events_router
 from backend.api.routes.files import router as files_router
+from backend.api.routes.fim import router as fim_router
 from backend.api.routes.processes import router as processes_router
 from backend.api.routes.resources import router as resources_router
 from backend.api.routes.sessions import router as sessions_router
@@ -72,6 +73,7 @@ app.include_router(events_router, prefix="/api/events", tags=["events"])
 app.include_router(processes_router, prefix="/api/processes", tags=["processes"])
 app.include_router(resources_router, prefix="/api/resources", tags=["resources"])
 app.include_router(files_router, prefix="/api/files", tags=["files"])
+app.include_router(fim_router, prefix="/api/fim", tags=["fim"])
 app.include_router(sessions_router, prefix="/api/sessions", tags=["sessions"])
 app.include_router(snapshots_router, prefix="/api/snapshots", tags=["snapshots"])
 app.include_router(timeline_router, prefix="/api/timeline", tags=["timeline"])

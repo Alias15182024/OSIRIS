@@ -27,6 +27,9 @@
     SESSIONS: '/api/sessions',
     TIMELINE: '/api/timeline',
     DETECTIONS: '/api/detections',
+    FIM_BASELINES: '/api/fim/baselines',
+    FIM_DEVIATIONS: '/api/fim/deviations',
+    FIM_VERIFY: '/api/fim/verify',
   });
 
   let authExpiredCallback = null;
@@ -328,6 +331,116 @@
     return await fetchWithAuth(url);
   }
 
+  /**
+   * Fetch paginated FIM baselines.
+   * @param {Object} [params={}]
+   * @returns {Promise<Object>} BaselineListResponse
+   */
+  async function getFimBaselines(params = {}) {
+    const query = new URLSearchParams();
+    Object.keys(params).forEach((key) => {
+      const val = params[key];
+      if (val !== undefined && val !== null && val !== '') {
+        query.append(key, String(val));
+      }
+    });
+    const qs = query.toString();
+    const url = qs ? `${ENDPOINTS.FIM_BASELINES}?${qs}` : ENDPOINTS.FIM_BASELINES;
+    return await fetchWithAuth(url);
+  }
+
+  /**
+   * Fetch single FIM baseline by ID.
+   * @param {string} baselineId
+   * @returns {Promise<Object>} BaselineDetailResponse
+   */
+  async function getFimBaseline(baselineId) {
+    if (!baselineId) {
+      throw new Error('baselineId is required');
+    }
+    return await fetchWithAuth(`${ENDPOINTS.FIM_BASELINES}/${encodeURIComponent(baselineId)}`);
+  }
+
+  /**
+   * Create a new FIM baseline.
+   * @param {Object} payload
+   * @returns {Promise<Object>} BaselineResponse
+   */
+  async function createFimBaseline(payload = {}) {
+    const options = {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    };
+    return await fetchWithAuth(ENDPOINTS.FIM_BASELINES, options);
+  }
+
+  /**
+   * Fetch files for a FIM baseline.
+   * @param {string} baselineId
+   * @param {Object} [params={}]
+   * @returns {Promise<Object>} BaselineFileListResponse
+   */
+  async function getFimBaselineFiles(baselineId, params = {}) {
+    if (!baselineId) {
+      throw new Error('baselineId is required');
+    }
+    const query = new URLSearchParams();
+    Object.keys(params).forEach((key) => {
+      const val = params[key];
+      if (val !== undefined && val !== null && val !== '') {
+        query.append(key, String(val));
+      }
+    });
+    const qs = query.toString();
+    const url = qs
+      ? `${ENDPOINTS.FIM_BASELINES}/${encodeURIComponent(baselineId)}/files?${qs}`
+      : `${ENDPOINTS.FIM_BASELINES}/${encodeURIComponent(baselineId)}/files`;
+    return await fetchWithAuth(url);
+  }
+
+  /**
+   * Fetch paginated FIM deviations.
+   * @param {Object} [params={}]
+   * @returns {Promise<Object>} DeviationListResponse
+   */
+  async function getFimDeviations(params = {}) {
+    const query = new URLSearchParams();
+    Object.keys(params).forEach((key) => {
+      const val = params[key];
+      if (val !== undefined && val !== null && val !== '') {
+        query.append(key, String(val));
+      }
+    });
+    const qs = query.toString();
+    const url = qs ? `${ENDPOINTS.FIM_DEVIATIONS}?${qs}` : ENDPOINTS.FIM_DEVIATIONS;
+    return await fetchWithAuth(url);
+  }
+
+  /**
+   * Fetch single FIM deviation by ID.
+   * @param {string} deviationId
+   * @returns {Promise<Object>} DeviationDetailResponse
+   */
+  async function getFimDeviation(deviationId) {
+    if (!deviationId) {
+      throw new Error('deviationId is required');
+    }
+    return await fetchWithAuth(`${ENDPOINTS.FIM_DEVIATIONS}/${encodeURIComponent(deviationId)}`);
+  }
+
+  /**
+   * Trigger FIM verification against a baseline.
+   * @param {Object} payload
+   * @returns {Promise<Object>} VerifyResponse
+   */
+  async function verifyFim(payload = {}) {
+    const options = {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    };
+    return await fetchWithAuth(ENDPOINTS.FIM_VERIFY, options);
+  }
+
   // Export to global namespace
   window.OsirisApi = Object.freeze({
     ENDPOINTS,
@@ -347,6 +460,13 @@
     getDetection,
     acknowledgeDetection,
     getDetectionRules,
+    getFimBaselines,
+    getFimBaseline,
+    createFimBaseline,
+    getFimBaselineFiles,
+    getFimDeviations,
+    getFimDeviation,
+    verifyFim,
   });
 
 })(typeof window !== 'undefined' ? window : this);

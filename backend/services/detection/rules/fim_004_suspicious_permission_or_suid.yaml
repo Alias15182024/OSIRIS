@@ -1,0 +1,25 @@
+rule_id: OSIRIS-FIM-004
+name: Suspicious SUID/SGID Grant or Permission Tampering
+description: Detects files being granted SUID/SGID execution bits or suspicious permission elevation.
+category: file_integrity
+severity: high
+enabled: true
+version: 1
+rule_type: single_event
+explanation: Granting SUID or SGID permissions to binaries allows unprivileged users to execute commands with elevated root or group privileges.
+conditions:
+  all:
+    - field: event_type
+      operator: ==
+      value: "fim:deviation"
+    - any:
+        - field: payload.is_suid
+          operator: ==
+          value: true
+        - field: action
+          operator: ==
+          value: "permission_changed"
+metadata:
+  mitre_technique: T1548.001
+  mitre_tactic: Privilege Escalation
+  author: OSIRIS Core Security Team

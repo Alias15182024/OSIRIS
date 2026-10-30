@@ -1,0 +1,40 @@
+rule_id: OSIRIS-FIM-003
+name: Unexpected System Executable Tampering
+description: Detects modifications to core system binaries in /bin, /sbin, /usr/bin, or /usr/sbin.
+category: file_integrity
+severity: high
+enabled: true
+version: 1
+rule_type: single_event
+explanation: Binary replacement or trojanizing core executables is a classic rootkit persistence and defense evasion maneuver.
+conditions:
+  all:
+    - field: event_type
+      operator: ==
+      value: "fim:deviation"
+    - field: action
+      operator: in
+      value: ["modified_file", "symlink_changed", "deleted_file"]
+    - any:
+        - field: object_path
+          operator: contains
+          value: "/bin/"
+        - field: object_path
+          operator: contains
+          value: "/sbin/"
+        - field: object_path
+          operator: contains
+          value: "/usr/bin/"
+        - field: object_path
+          operator: contains
+          value: "/usr/sbin/"
+        - field: object_path
+          operator: contains
+          value: "/usr/local/bin/"
+        - field: object_path
+          operator: contains
+          value: "/usr/local/sbin/"
+metadata:
+  mitre_technique: T1036
+  mitre_tactic: Persistence
+  author: OSIRIS Core Security Team

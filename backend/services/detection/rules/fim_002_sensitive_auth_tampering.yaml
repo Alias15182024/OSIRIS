@@ -1,0 +1,43 @@
+rule_id: OSIRIS-FIM-002
+name: Sensitive Authentication File Modification
+description: Detects unauthorized alterations to system credential files (/etc/passwd, /etc/shadow, /etc/gshadow, or /etc/master.passwd).
+category: file_integrity
+severity: critical
+enabled: true
+version: 1
+rule_type: single_event
+explanation: Direct alteration of /etc/shadow or /etc/passwd indicates credential dumping, backdoor account creation, or password hash tampering.
+conditions:
+  all:
+    - field: event_type
+      operator: ==
+      value: "fim:deviation"
+    - any:
+        - field: object_path
+          operator: contains
+          value: "/etc/passwd"
+        - field: object_path
+          operator: contains
+          value: "/etc/shadow"
+        - field: object_path
+          operator: contains
+          value: "/etc/gshadow"
+        - field: object_path
+          operator: contains
+          value: "/etc/master.passwd"
+        - field: object_path
+          operator: endswith
+          value: "/passwd"
+        - field: object_path
+          operator: endswith
+          value: "/shadow"
+        - field: object_path
+          operator: endswith
+          value: "/gshadow"
+        - field: object_path
+          operator: endswith
+          value: "/master.passwd"
+metadata:
+  mitre_technique: T1003.008
+  mitre_tactic: Credential Access
+  author: OSIRIS Core Security Team

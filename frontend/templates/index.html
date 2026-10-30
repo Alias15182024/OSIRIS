@@ -85,6 +85,13 @@
             <span id="nav-detections-badge" class="badge badge-danger hidden">0</span>
           </button>
         </li>
+        <li class="nav-item">
+          <button id="nav-fim" class="nav-link" type="button" data-view="fim">
+            <span class="nav-icon" aria-hidden="true">&#x1F50D;</span>
+            <span class="nav-label">File Integrity</span>
+            <span id="nav-fim-badge" class="badge badge-danger hidden">0</span>
+          </button>
+        </li>
       </ul>
     </nav>
 
@@ -979,6 +986,223 @@
         </div>
       </section>
 
+      <!-- View 9: File Integrity Monitoring (FIM) -->
+      <section id="view-fim" class="view-panel hidden" aria-labelledby="heading-fim">
+        <div class="view-header">
+          <div class="view-header-main">
+            <h2 id="heading-fim" class="view-title">File Integrity Monitoring (FIM)</h2>
+            <span class="view-subtitle">Cryptographic baseline verification and real-time filesystem tamper detection</span>
+          </div>
+          <div class="view-actions">
+            <button id="fim-verify-trigger-btn" class="btn btn-primary btn-sm" type="button">Verify Integrity</button>
+            <button id="fim-refresh-btn" class="btn btn-outline btn-sm" type="button" aria-label="Refresh FIM Data">Refresh</button>
+            <span id="fim-refresh-time" class="timestamp-label"></span>
+          </div>
+        </div>
+
+        <!-- Metric Stat Cards -->
+        <div class="stats-grid mb-4">
+          <div class="stat-card">
+            <span class="stat-label">Total Baselines</span>
+            <span id="fim-stat-baselines" class="stat-value">0</span>
+          </div>
+          <div class="stat-card stat-medium">
+            <span class="stat-label">Active Deviations</span>
+            <span id="fim-stat-deviations" class="stat-value">0</span>
+          </div>
+          <div class="stat-card stat-critical">
+            <span class="stat-label">Critical Deviations</span>
+            <span id="fim-stat-critical" class="stat-value">0</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Files Monitored</span>
+            <span id="fim-stat-files" class="stat-value">0</span>
+          </div>
+        </div>
+
+        <!-- Sub-navigation Tabs -->
+        <div class="sub-nav mb-4" role="tablist">
+          <button id="fim-tab-deviations" class="btn btn-tab active" type="button" role="tab" aria-selected="true" data-tab="deviations">Integrity Deviations</button>
+          <button id="fim-tab-baselines" class="btn btn-tab" type="button" role="tab" aria-selected="false" data-tab="baselines">Filesystem Baselines</button>
+        </div>
+
+        <!-- Tab 1: Integrity Deviations -->
+        <div id="fim-panel-deviations" class="tab-panel active">
+          <!-- Filter Controls -->
+          <div class="card filter-card">
+            <form id="fim-deviations-filter-form" class="filter-form" novalidate>
+              <div class="filter-row">
+                <div class="form-group">
+                  <label for="filter-fim-host-id" class="form-label">Host ID</label>
+                  <input id="filter-fim-host-id" class="form-input" type="text" placeholder="Filter by Host UUID...">
+                </div>
+                <div class="form-group">
+                  <label for="filter-fim-baseline-id" class="form-label">Baseline ID</label>
+                  <input id="filter-fim-baseline-id" class="form-input" type="text" placeholder="Filter by Baseline UUID...">
+                </div>
+                <div class="form-group">
+                  <label for="filter-fim-file-path" class="form-label">File Path</label>
+                  <input id="filter-fim-file-path" class="form-input" type="text" placeholder="e.g. /etc/passwd">
+                </div>
+                <div class="form-group">
+                  <label for="filter-fim-deviation-type" class="form-label">Deviation Type</label>
+                  <select id="filter-fim-deviation-type" class="form-select">
+                    <option value="">All Types</option>
+                    <option value="modified">Modified</option>
+                    <option value="added">Added</option>
+                    <option value="removed">Removed</option>
+                    <option value="permission_changed">Permission Changed</option>
+                    <option value="ownership_changed">Ownership Changed</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="filter-fim-severity" class="form-label">Severity</label>
+                  <select id="filter-fim-severity" class="form-select">
+                    <option value="">All Severities</option>
+                    <option value="critical">Critical</option>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                    <option value="info">Info</option>
+                  </select>
+                </div>
+                <div class="filter-actions">
+                  <button id="fim-deviations-apply-btn" class="btn btn-primary btn-sm" type="submit">Apply</button>
+                  <button id="fim-deviations-reset-btn" class="btn btn-outline btn-sm" type="button">Reset</button>
+                </div>
+              </div>
+            </form>
+          </div>
+
+          <!-- Deviations Table Card -->
+          <div class="card table-card">
+            <div class="card-header">
+              <span class="card-title">Integrity Deviation Records</span>
+              <span id="fim-deviations-total-badge" class="badge badge-secondary">0 Deviations</span>
+            </div>
+
+            <!-- Loading State -->
+            <div id="fim-deviations-loading" class="table-loading hidden">
+              <div class="spinner-sm" aria-hidden="true"></div>
+              <span>Fetching integrity deviations...</span>
+            </div>
+
+            <!-- Empty State -->
+            <div id="fim-deviations-empty-state" class="empty-state hidden">
+              <span class="empty-icon" aria-hidden="true">&#x1F6E1;</span>
+              <p class="empty-text">No file integrity deviations found matching the selected filters.</p>
+            </div>
+
+            <!-- Error State -->
+            <div id="fim-deviations-error" class="alert-box alert-error hidden" role="alert"></div>
+
+            <!-- Table -->
+            <div class="table-responsive">
+              <table id="fim-deviations-table" class="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Detected At (UTC)</th>
+                    <th scope="col">Severity</th>
+                    <th scope="col">Deviation Type</th>
+                    <th scope="col">File Path</th>
+                    <th scope="col">Host</th>
+                    <th scope="col">Detection</th>
+                    <th scope="col">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="fim-deviations-tbody">
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Pagination -->
+            <div class="pagination-bar">
+              <button id="fim-deviations-prev-btn" class="btn btn-outline btn-sm" type="button" disabled>&larr; Previous</button>
+              <span id="fim-deviations-page-info" class="pagination-info">Page 1 of 1</span>
+              <button id="fim-deviations-next-btn" class="btn btn-outline btn-sm" type="button" disabled>Next &rarr;</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Filesystem Baselines -->
+        <div id="fim-panel-baselines" class="tab-panel hidden">
+          <!-- Filter Controls -->
+          <div class="card filter-card">
+            <form id="fim-baselines-filter-form" class="filter-form" novalidate>
+              <div class="filter-row">
+                <div class="form-group">
+                  <label for="filter-fim-baseline-host-id" class="form-label">Host ID</label>
+                  <input id="filter-fim-baseline-host-id" class="form-input" type="text" placeholder="Filter by Host UUID...">
+                </div>
+                <div class="form-group">
+                  <label for="filter-fim-baseline-status" class="form-label">Status</label>
+                  <select id="filter-fim-baseline-status" class="form-select">
+                    <option value="">All Statuses</option>
+                    <option value="active">Active</option>
+                    <option value="superseded">Superseded</option>
+                    <option value="revoked">Revoked</option>
+                  </select>
+                </div>
+                <div class="filter-actions">
+                  <button id="fim-baselines-apply-btn" class="btn btn-primary btn-sm" type="submit">Apply</button>
+                  <button id="fim-baselines-reset-btn" class="btn btn-outline btn-sm" type="button">Reset</button>
+                </div>
+              </div>
+            </form>
+          </div>
+
+          <!-- Baselines Table Card -->
+          <div class="card table-card">
+            <div class="card-header">
+              <span class="card-title">Cryptographic Baselines</span>
+              <span id="fim-baselines-total-badge" class="badge badge-secondary">0 Baselines</span>
+            </div>
+
+            <!-- Loading State -->
+            <div id="fim-baselines-loading" class="table-loading hidden">
+              <div class="spinner-sm" aria-hidden="true"></div>
+              <span>Fetching filesystem baselines...</span>
+            </div>
+
+            <!-- Empty State -->
+            <div id="fim-baselines-empty-state" class="empty-state hidden">
+              <span class="empty-icon" aria-hidden="true">&#x1F4C2;</span>
+              <p class="empty-text">No baselines found matching the selected filters.</p>
+            </div>
+
+            <!-- Error State -->
+            <div id="fim-baselines-error" class="alert-box alert-error hidden" role="alert"></div>
+
+            <!-- Table -->
+            <div class="table-responsive">
+              <table id="fim-baselines-table" class="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Created At (UTC)</th>
+                    <th scope="col">Host ID</th>
+                    <th scope="col">Version</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Path Scope</th>
+                    <th scope="col">Files</th>
+                    <th scope="col">Total Size</th>
+                    <th scope="col">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="fim-baselines-tbody">
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Pagination -->
+            <div class="pagination-bar">
+              <button id="fim-baselines-prev-btn" class="btn btn-outline btn-sm" type="button" disabled>&larr; Previous</button>
+              <span id="fim-baselines-page-info" class="pagination-info">Page 1 of 1</span>
+              <button id="fim-baselines-next-btn" class="btn btn-outline btn-sm" type="button" disabled>Next &rarr;</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
     </main>
 
     <!-- Login Modal Placeholder / Container -->
@@ -1209,6 +1433,166 @@
       </div>
     </div>
 
+    <!-- FIM Deviation Detail Modal -->
+    <div id="fim-deviation-detail-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="fim-deviation-modal-title">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-header">
+          <h3 id="fim-deviation-modal-title" class="modal-title">Integrity Deviation Inspector</h3>
+          <button id="fim-deviation-modal-close" class="modal-close-btn" type="button" aria-label="Close modal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="detail-grid">
+            <div class="detail-item">
+              <span class="detail-label">File Path:</span>
+              <span id="detail-fim-deviation-path" class="detail-val font-mono font-bold"></span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Deviation Type:</span>
+              <span id="detail-fim-deviation-type" class="detail-val"></span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Severity:</span>
+              <span id="detail-fim-deviation-severity" class="detail-val"></span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Detected At:</span>
+              <span id="detail-fim-deviation-timestamp" class="detail-val font-mono"></span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Host ID:</span>
+              <span id="detail-fim-deviation-host" class="detail-val font-mono"></span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Baseline ID:</span>
+              <span id="detail-fim-deviation-baseline" class="detail-val font-mono"></span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Linked Detection ID:</span>
+              <span id="detail-fim-deviation-detection-id" class="detail-val font-mono"></span>
+            </div>
+          </div>
+
+          <div class="modal-section mt-4">
+            <h4 class="section-subtitle">Explanation &amp; Security Impact</h4>
+            <div id="detail-fim-deviation-explanation" class="explanation-box"></div>
+          </div>
+
+          <div class="modal-section mt-4">
+            <h4 class="section-subtitle">Expected vs. Observed Forensic Comparison</h4>
+            <div id="detail-fim-deviation-diff" class="evidence-pre font-mono"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FIM Baseline Detail Modal -->
+    <div id="fim-baseline-detail-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="fim-baseline-modal-title">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-header">
+          <h3 id="fim-baseline-modal-title" class="modal-title">Cryptographic Baseline Inspector</h3>
+          <button id="fim-baseline-modal-close" class="modal-close-btn" type="button" aria-label="Close modal">&times;</button>
+        </div>
+        <div class="modal-body modal-scrollable">
+          <div class="detail-grid">
+            <div class="detail-item">
+              <span class="detail-label">Baseline ID:</span>
+              <span id="detail-fim-baseline-id" class="detail-val font-mono font-bold"></span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Host ID:</span>
+              <span id="detail-fim-baseline-host" class="detail-val font-mono"></span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Version:</span>
+              <span id="detail-fim-baseline-version" class="detail-val font-mono"></span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Status:</span>
+              <span id="detail-fim-baseline-status" class="detail-val"></span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Path Scope:</span>
+              <span id="detail-fim-baseline-scope" class="detail-val font-mono"></span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Include / Exclude Rules:</span>
+              <span id="detail-fim-baseline-rules" class="detail-val font-mono"></span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Total Files:</span>
+              <span id="detail-fim-baseline-files-count" class="detail-val font-bold"></span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Total Size:</span>
+              <span id="detail-fim-baseline-total-size" class="detail-val font-mono"></span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Scan Duration:</span>
+              <span id="detail-fim-baseline-duration" class="detail-val font-mono"></span>
+            </div>
+          </div>
+
+          <!-- Baseline Monitored Files -->
+          <div class="modal-section mt-4">
+            <h4 class="section-subtitle">Monitored Files Sample</h4>
+            <div class="table-responsive">
+              <table id="detail-fim-baseline-files-table" class="data-table" aria-label="Baseline Files">
+                <thead>
+                  <tr>
+                    <th scope="col">File Path</th>
+                    <th scope="col">SHA-256 Digest</th>
+                    <th scope="col">Mode</th>
+                    <th scope="col">Owner:Group</th>
+                    <th scope="col">Size</th>
+                  </tr>
+                </thead>
+                <tbody id="detail-fim-baseline-files-tbody">
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FIM Trigger Verification Modal -->
+    <div id="fim-verify-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="fim-verify-modal-title">
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <h3 id="fim-verify-modal-title" class="modal-title">Trigger Integrity Verification</h3>
+          <button id="fim-verify-modal-close" class="modal-close-btn" type="button" aria-label="Close modal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div id="verify-fim-result" class="alert-box alert-error hidden" role="alert"></div>
+          <form id="fim-verify-form" class="filter-form" novalidate>
+            <div class="form-group mb-3">
+              <label for="verify-fim-host-id" class="form-label">Host ID *</label>
+              <input id="verify-fim-host-id" class="form-input" type="text" placeholder="UUID of target host" required>
+            </div>
+            <div class="form-group mb-3">
+              <label for="verify-fim-baseline-id" class="form-label">Baseline ID (optional - defaults to active)</label>
+              <input id="verify-fim-baseline-id" class="form-input" type="text" placeholder="UUID of specific baseline">
+            </div>
+            <div class="form-group mb-3">
+              <label for="verify-fim-path-scope" class="form-label">Path Scope Override (optional)</label>
+              <input id="verify-fim-path-scope" class="form-input" type="text" placeholder="e.g. /etc">
+            </div>
+            <div class="form-group mb-3">
+              <label class="form-label">Verification Checks</label>
+              <div class="checkbox-group">
+                <label><input id="verify-fim-check-contents" type="checkbox" checked> Check Contents (Cryptographic Hash)</label><br>
+                <label><input id="verify-fim-check-permissions" type="checkbox" checked> Check Permissions (Mode/Bits)</label><br>
+                <label><input id="verify-fim-check-ownership" type="checkbox" checked> Check Ownership (UID/GID)</label>
+              </div>
+            </div>
+            <div class="modal-footer pt-3">
+              <button id="verify-fim-submit-btn" class="btn btn-primary" type="submit">Run Verification</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
     <!-- Global Loading Indicator Shell -->
     <div id="global-loading-indicator" class="loading-overlay hidden" aria-live="assertive" aria-label="Loading content">
       <div class="spinner" aria-hidden="true"></div>
@@ -1234,6 +1618,7 @@
   <script src="/static/js/views/timeline.js" defer></script>
   <script src="/static/js/views/sessions.js" defer></script>
   <script src="/static/js/views/detections.js" defer></script>
+  <script src="/static/js/views/fim.js" defer></script>
   <script src="/static/js/app.js" defer></script>
 </body>
 </html>

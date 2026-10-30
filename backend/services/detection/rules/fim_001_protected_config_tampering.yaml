@@ -1,0 +1,34 @@
+rule_id: OSIRIS-FIM-001
+name: Protected System Configuration Tampering
+description: Detects unauthorized modifications to critical security and privilege configuration files in /etc/pam.d, /etc/security, /etc/sudoers, or /etc/login.defs.
+category: file_integrity
+severity: critical
+enabled: true
+version: 1
+rule_type: single_event
+explanation: Modifications to PAM configuration or login definitions can bypass host authentication checks or establish covert administrative backdoors.
+conditions:
+  all:
+    - field: event_type
+      operator: ==
+      value: "fim:deviation"
+    - any:
+        - field: object_path
+          operator: contains
+          value: "/etc/pam.d/"
+        - field: object_path
+          operator: contains
+          value: "/etc/security/"
+        - field: object_path
+          operator: contains
+          value: "/etc/sudoers"
+        - field: object_path
+          operator: ==
+          value: "/etc/login.defs"
+        - field: object_path
+          operator: contains
+          value: "/etc/default/"
+metadata:
+  mitre_technique: T1556
+  mitre_tactic: Defense Evasion
+  author: OSIRIS Core Security Team
