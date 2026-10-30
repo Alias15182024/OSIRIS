@@ -42,6 +42,7 @@
         processes: document.getElementById('view-processes'),
         resources: document.getElementById('view-resources'),
         files: document.getElementById('view-files'),
+        timeline: document.getElementById('view-timeline'),
       },
 
       // Modal elements
@@ -342,6 +343,11 @@
     // Load files data when files view becomes active
     if (viewName === 'files' && window.OsirisFiles && typeof window.OsirisFiles.loadFiles === 'function') {
       window.OsirisFiles.loadFiles();
+    }
+
+    // Load timeline data when timeline view becomes active
+    if (viewName === 'timeline' && window.OsirisTimeline && typeof window.OsirisTimeline.loadTimeline === 'function') {
+      window.OsirisTimeline.loadTimeline();
     }
   }
 

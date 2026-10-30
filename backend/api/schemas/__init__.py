@@ -36,11 +36,23 @@ from backend.api.schemas.snapshots import (
     SnapshotResponse,
 )
 from backend.api.schemas.status import ErrorDetail, StatusResponse
+from backend.api.schemas.timeline import (
+    FileContext,
+    PaginatedTimelineResponse,
+    ProcessContext,
+    ResourceContext,
+    SessionContext,
+    SnapshotContext,
+    TimelineEntryResponse,
+    TimelineQueryParams,
+    UserContext,
+)
 
 __all__ = [
     "ErrorDetail",
     "EventQueryParams",
     "EventResponse",
+    "FileContext",
     "FileQueryParams",
     "FileResponse",
     "LoginRequest",
@@ -49,13 +61,21 @@ __all__ = [
     "PaginatedProcessResponse",
     "PaginatedResourceSnapshotResponse",
     "PaginatedSnapshotResponse",
+    "PaginatedTimelineResponse",
+    "ProcessContext",
     "ProcessQueryParams",
     "ProcessResponse",
+    "ResourceContext",
     "ResourceSnapshotQueryParams",
     "ResourceSnapshotResponse",
+    "SessionContext",
+    "SnapshotContext",
     "SnapshotQueryParams",
     "SnapshotResponse",
     "StatusResponse",
+    "TimelineEntryResponse",
+    "TimelineQueryParams",
     "TokenResponse",
+    "UserContext",
     "UserResponse",
 ]

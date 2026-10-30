@@ -7,6 +7,7 @@ from backend.api.routes.processes import router as processes_router
 from backend.api.routes.resources import router as resources_router
 from backend.api.routes.snapshots import router as snapshots_router
 from backend.api.routes.status import router as status_router
+from backend.api.routes.timeline import router as timeline_router
 
 __all__ = [
     "auth_router",
@@ -16,4 +17,5 @@ __all__ = [
     "resources_router",
     "snapshots_router",
     "status_router",
+    "timeline_router",
 ]

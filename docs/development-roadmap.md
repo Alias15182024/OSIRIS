@@ -254,19 +254,38 @@ the Event Processing Layer (Milestone 1.3).
 
 ---
 
-### Milestone 2.2 — Timeline Reconstruction
+### Milestone 2.2 — Timeline Reconstruction (Completed)
 
 **Goal:** Reconstruct activity timelines from stored events.
 
-- [ ] Timeline query service (events + processes + files within time window)
-- [ ] Entity correlation (link events to processes, users, files)
-- [ ] Timeline API endpoint
-- [ ] Timeline visualization in frontend
+- [x] Timeline query service (events + processes + files within time window)
+- [x] Entity correlation (link events to processes, users, files)
+- [x] Timeline API endpoint
+- [x] Timeline visualization in frontend
 
 **Testing Checkpoint:**
 - Timelines are accurately reconstructed from stored data
 - Entity correlation is correct
 - Timeline UI displays events in correct chronological order
+
+**Milestone 2.2 Validation Evidence:**
+- **Environment:** macOS Darwin (Apple Silicon) / Python 3.12.13
+- **Full Test Suite:** 911 passed, 12 skipped, 30 warnings in 18.20s
+  - 20 timeline service unit tests passed (`tests/unit/test_timeline_service.py`).
+  - 12 timeline entity correlator unit tests passed (`tests/unit/test_timeline_correlator.py`).
+  - 21 timeline API unit tests passed (`tests/unit/test_api_timeline.py`).
+  - 14 timeline frontend contract tests passed (`tests/unit/test_timeline_view_contract.py`).
+  - 51 Pydantic schema tests passed (`tests/unit/test_schemas.py`).
+  - 12 skipped: 11 Linux integration tests and 1 SQLite CHECK constraint test.
+- **API Endpoints Verified:**
+  - `GET /api/timeline` (unified chronological sequence across events, processes, sessions, snapshots, resource telemetry, and files; deterministic sequence tie-breaking with lifecycle precedence; host filtering; record_type filtering; PID/process/user filtering; time-window bounds; pagination with limit and offset).
+- **Forensic Correctness Verified:**
+  - Cross-host isolation enforced across all entity lookups, event references, and queries.
+  - PID reuse safely resolved via time-bounded process lifetimes and snapshot containment disambiguation.
+  - User filtering across `username`, `uid`, and `user_id` correctly resolves identities without leakage or false positives.
+  - Multi-source deduplication prevents double-counting between events and lifecycle tables.
+- **Frontend Contract Verified:**
+  - `timeline.js` validated with zero `innerHTML`, zero `localStorage`, zero `eval`, and 100% clean JavaScriptCore execution.
 
 ---
 

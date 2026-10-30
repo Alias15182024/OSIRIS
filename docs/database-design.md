@@ -260,6 +260,19 @@ snapshots
 INDEX (host_id, timestamp)
 ```
 
+### 3.8.1 Timeline Reconstruction Query Architecture (Milestone 2.2)
+
+Milestone 2.2 implements unified timeline reconstruction querying across `events`, `processes`, `sessions`, `snapshots`, `resource_snapshots`, and `files`.
+Query optimization and indexing analysis confirmed that existing compound indexes adequately support timeline queries without schema modifications:
+- `ix_events_host_ts (host_id, timestamp)`
+- `ix_processes_host_pid_started (host_id, pid, started_at)`
+- `ix_files_host_path (host_id, path)`
+- `ix_snapshots_host_ts (host_id, timestamp)`
+- `ix_sessions_host_started (host_id, started_at)`
+- `ix_resource_snapshots_host_ts (host_id, timestamp)`
+
+Database `UNION ALL` subqueries push down filtering (`host_id`, `start_time`, `end_time`, `event_type`), pagination (`LIMIT`, `OFFSET`), and deterministic ordering (`timestamp ASC, source_id ASC`) directly to the PostgreSQL/SQLite query planner, avoiding full-table scans and eliminating in-memory buffering of large historical datasets.
+
 ### 3.9 Security Rule (Phase 2)
 
 ```

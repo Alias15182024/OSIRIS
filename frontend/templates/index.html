@@ -66,6 +66,12 @@
             <span class="nav-label">Files</span>
           </button>
         </li>
+        <li class="nav-item">
+          <button id="nav-timeline" class="nav-link" type="button" data-view="timeline">
+            <span class="nav-icon" aria-hidden="true">&#x23F1;</span>
+            <span class="nav-label">Timeline</span>
+          </button>
+        </li>
       </ul>
     </nav>
 
@@ -655,6 +661,81 @@
         </div>
       </section>
 
+      <!-- View 6: Timeline Reconstruction -->
+      <section id="view-timeline" class="view-panel" aria-labelledby="heading-timeline">
+        <div class="view-header">
+          <h2 id="heading-timeline" class="view-title">Forensic Timeline</h2>
+          <div class="view-actions">
+            <span id="timeline-result-count" class="badge badge-secondary">0 entries</span>
+          </div>
+        </div>
+
+        <!-- Filter Bar -->
+        <div class="filter-card">
+          <form id="timeline-filter-form" class="filter-form" novalidate>
+            <div class="filter-grid">
+              <div class="filter-group">
+                <label for="filter-timeline-host-id" class="filter-label">Host ID</label>
+                <input id="filter-timeline-host-id" class="form-input form-input-sm" type="text" placeholder="UUID filter">
+              </div>
+              <div class="filter-group">
+                <label for="filter-timeline-start-time" class="filter-label">Start Time (UTC)</label>
+                <input id="filter-timeline-start-time" class="form-input form-input-sm" type="text" placeholder="YYYY-MM-DDTHH:MM:SSZ">
+              </div>
+              <div class="filter-group">
+                <label for="filter-timeline-end-time" class="filter-label">End Time (UTC)</label>
+                <input id="filter-timeline-end-time" class="form-input form-input-sm" type="text" placeholder="YYYY-MM-DDTHH:MM:SSZ">
+              </div>
+              <div class="filter-group">
+                <label for="filter-timeline-record-type" class="filter-label">Record Type</label>
+                <select id="filter-timeline-record-type" class="form-select form-select-sm">
+                  <option value="">All Types</option>
+                  <option value="event">Events</option>
+                  <option value="process">Processes</option>
+                  <option value="session">Sessions</option>
+                  <option value="snapshot">Snapshots</option>
+                  <option value="resource">Resource Telemetry</option>
+                  <option value="file">Files</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <label for="filter-timeline-order" class="filter-label">Order</label>
+                <select id="filter-timeline-order" class="form-select form-select-sm">
+                  <option value="asc">Chronological (Oldest First)</option>
+                  <option value="desc">Reverse (Newest First)</option>
+                </select>
+              </div>
+            </div>
+            <div class="filter-actions">
+              <button id="filter-timeline-apply-btn" class="btn btn-primary btn-sm" type="submit">Apply Filter</button>
+              <button id="filter-timeline-reset-btn" class="btn btn-outline btn-sm" type="button">Reset</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Timeline Stream Container -->
+        <div class="table-card">
+          <div id="timeline-error-box" class="alert-box alert-error hidden" role="alert"></div>
+          <div id="timeline-loading-indicator" class="loading-inline hidden">
+            <div class="spinner-sm" aria-hidden="true"></div>
+            <span>Reconstructing timeline...</span>
+          </div>
+          <div id="timeline-empty-state" class="empty-state hidden">
+            <span class="empty-icon" aria-hidden="true">&#x1F50D;</span>
+            <p class="empty-text">No timeline entries found matching the selected filters.</p>
+            <button id="timeline-empty-reset-btn" class="btn btn-outline btn-sm" type="button">Clear Filters</button>
+          </div>
+          <div id="timeline-stream" class="timeline-stream-container"></div>
+          <div id="timeline-pagination" class="pagination-toolbar">
+            <span id="timeline-page-info" class="pagination-info">Showing 0–0 of 0 entries</span>
+            <div class="pagination-actions">
+              <button id="timeline-prev-btn" class="btn btn-outline btn-sm" type="button" disabled>&larr; Previous</button>
+              <button id="timeline-next-btn" class="btn btn-outline btn-sm" type="button" disabled>Next &rarr;</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
     </main>
 
     <!-- Login Modal Placeholder / Container -->
@@ -790,6 +871,7 @@
   <script src="/static/js/views/processes.js" defer></script>
   <script src="/static/js/views/resources.js" defer></script>
   <script src="/static/js/views/files.js" defer></script>
+  <script src="/static/js/views/timeline.js" defer></script>
   <script src="/static/js/app.js" defer></script>
 </body>
 </html>

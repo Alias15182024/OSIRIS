@@ -446,3 +446,78 @@ All components of Milestone 2.1 have been implemented, verified, and validated:
   - `tests/unit/test_api_snapshots.py` (37 passed): Listing, single retrieval, host filtering, type filtering, start/end time filtering, exact timestamp filtering, pagination with offsets beyond total, ordering, 404/422 errors, authentication/authorization enforcement, edge cases (empty JSON, large payloads, timezone offsets, multi-host isolation, case-insensitive UUID), OpenAPI registration, and PostgreSQL end-to-end integration with transaction rollback.
   - `tests/unit/test_snapshot_service.py` (38 passed): Point-in-time creation, process & resource gathering, empty process handling, null resource handling, forensic immutability, caller-owned transaction discipline without service commits or rollbacks.
   - `tests/unit/test_schemas.py` (44 passed): Schema defaults, boundary validation, serialization, and ORM validation.
+
+---
+
+# OSIRIS Milestone 2.2: Forensic Timeline Reconstruction Walkthrough
+
+## Summary of Completed Work
+Milestone 2.2 provides unified forensic timeline reconstruction, entity correlation, and REST API access across all stored OSIRIS observational data (events, processes, user sessions, system-state snapshots, resource telemetry, and files).
+
+All Milestone 2.2 components have been implemented, verified through automated unit and contract tests, validated against OpenAPI 3.1.0 specifications, and integrated into the frontend SPA dashboard.
+
+---
+
+## 1. Components Implemented
+
+### 1.1 Forensic Entity Correlation Engine ([`backend/services/timeline/correlator.py`](file:///Users/alias/Desktop/OSIRIS/backend/services/timeline/correlator.py))
+- **Process Correlation (`correlate_process_by_id`, `correlate_process_by_pid`):**
+  - Host-scoped process resolution using `host_id`.
+  - Lifetime bounding: matches processes where `started_at <= timestamp` and `(ended_at IS NULL or timestamp <= ended_at)`.
+  - PID reuse safety: distinct process lifetimes sharing the same PID are disambiguated by timestamp; overlapping or ambiguous matches return `None` without guessing.
+- **Linux User Correlation (`correlate_user`):**
+  - Resolves Linux identities against `linux_users` table by `uid`, `linux_user_id`, or `username`.
+  - Missing or unresolvable users are preserved faithfully with available source fields (`user_id=None`) without inventing fictitious records.
+- **User Session Correlation (`correlate_session`):**
+  - Matches active login sessions for a specific user on a monitored host where `started_at <= timestamp` and `(ended_at IS NULL or timestamp <= ended_at)`.
+- **Filesystem Correlation (`correlate_file`):**
+  - Resolves file paths against `files` table to attach inode and file type metadata.
+- **Resource Telemetry Correlation (`correlate_resource`):**
+  - Locates nearest point-in-time resource snapshot within temporal tolerance (default 300s).
+- **Snapshot Correlation (`correlate_snapshot`):**
+  - Identifies nearest system-state snapshot on host within temporal tolerance (default 3600s).
+  - Inspects snapshot payload data to verify process containment (`process_captured=True/False`).
+- **Cross-Host Isolation:**
+  - Entities belonging to different hosts are never correlated.
+
+### 1.2 Timeline Reconstruction Service ([`backend/services/timeline/service.py`](file:///Users/alias/Desktop/OSIRIS/backend/services/timeline/service.py))
+- **Multi-Source Ingestion:** Unifies `events`, `processes`, `sessions`, `snapshots`, `resource_snapshots`, and `files`.
+- **Deduplication:** Prevents duplicate entries when events already record process starts/terminations, session logons/logoffs, or filesystem changes.
+- **Database Query Push-Down:** Constructs SQLAlchemy `UNION ALL` subqueries that execute filtering (`host_id`, `start_time`, `end_time`, `event_type`), pagination (`limit`, `offset`), and deterministic ordering (`timestamp ASC, source_id ASC`) directly inside SQL. Eliminates in-memory buffering of large historical datasets.
+- **Deterministic Ordering:** Supports chronological (`order="asc"`, default) and reverse chronological (`order="desc"`) with stable secondary sorting.
+
+### 1.3 Pydantic API Schemas ([`backend/api/schemas/timeline.py`](file:///Users/alias/Desktop/OSIRIS/backend/api/schemas/timeline.py))
+- `ProcessContext`, `UserContext`, `SessionContext`, `FileContext`, `ResourceContext`, `SnapshotContext`.
+- `TimelineEntryResponse` containing unified fields and entity context envelopes.
+- `TimelineQueryParams` validating filtering and bounded pagination parameters.
+- `PaginatedTimelineResponse` returning standardized `{ total, items, limit, offset }`.
+
+### 1.4 Timeline REST API Endpoint ([`backend/api/routes/timeline.py`](file:///Users/alias/Desktop/OSIRIS/backend/api/routes/timeline.py))
+- `GET /api/timeline` mounted in `backend/main.py`.
+- Bearer token authentication required.
+- Input validation:
+  - 400 Bad Request on inverted time window (`start_time > end_time`).
+  - 404 Not Found on nonexistent host UUID (`detail="Host not found"`).
+  - 422 Unprocessable Entity on malformed UUID or invalid pagination limits.
+
+### 1.5 Frontend Visualization ([`frontend/static/js/views/timeline.js`](file:///Users/alias/Desktop/OSIRIS/frontend/static/js/views/timeline.js))
+- Forensic timeline stream view in dark cybersecurity theme.
+- Displays chronological cards with severity badges, source provenance, and correlation chips (process, user, session, snapshot).
+- Filter controls for host UUID, start/end time, record type, and ordering.
+- Strict security: zero `innerHTML`, zero `localStorage`, zero `eval`. Validated cleanly in JavaScriptCore.
+
+---
+
+## 2. Test Verification & Results
+
+### 2.1 Test Suite Breakdown
+- **Full Workspace Pytest Suite**:
+  ```text
+  911 passed, 12 skipped, 30 warnings in 18.20s
+  ```
+- **Phase 2 Milestone 2.2 Targeted Suites**:
+  - `tests/unit/test_timeline_service.py` (20 passed): Multi-source timeline, chronological ordering, causal sequence ordering (starts precede ends on identical timestamps), user filtering across username/uid/user_id, deduplication, host isolation, cross-host process sanitization, corrupt snapshot data tolerance, pagination.
+  - `tests/unit/test_timeline_correlator.py` (12 passed): PID reuse, lifetime bounds, cross-host isolation, user/session/snapshot correlation, snapshot PID containment disambiguation, null data safety.
+  - `tests/unit/test_api_timeline.py` (21 passed): Auth enforcement, query filtering (host, record_type, process_id, pid, username), global timeline, mixed naive/aware datetimes, pagination, negative pid/uid 422 validation, OpenAPI registration.
+  - `tests/unit/test_timeline_view_contract.py` (14 passed): DOM structure, static security rules, JavaScriptCore syntax validation.
+  - `tests/unit/test_schemas.py` (51 passed): Pydantic v2 timeline schemas, non-negative pid/uid constraints, and envelope validation.

@@ -1131,3 +1131,123 @@ html, body {
     align-items: flex-start;
   }
 }
+
+/* ==========================================================================
+   Timeline Reconstruction Stream Styles (Phase 2 Milestone 2.2)
+   ========================================================================== */
+
+.timeline-stream-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: var(--space-md) 0;
+}
+
+.timeline-card {
+  background-color: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  transition: border-color var(--transition-fast), transform var(--transition-fast);
+}
+
+.timeline-card:hover {
+  border-color: var(--color-accent-light);
+  transform: translateX(2px);
+}
+
+.timeline-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+  padding-bottom: var(--space-xs);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.timeline-timestamp {
+  font-weight: var(--weight-bold);
+  color: var(--color-text-primary);
+  font-size: var(--font-sm);
+}
+
+.timeline-badges-col {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-wrap: wrap;
+}
+
+.timeline-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.timeline-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: var(--font-md);
+}
+
+.timeline-event-type {
+  font-weight: var(--weight-bold);
+  color: var(--color-accent-light);
+}
+
+.timeline-description {
+  color: var(--color-text-secondary);
+  font-size: var(--font-sm);
+}
+
+.timeline-correlations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-top: var(--space-xs);
+}
+
+.correlation-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background-color: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+}
+
+.chip-process {
+  border-color: #3b82f6;
+  color: #93c5fd;
+}
+
+.chip-user {
+  border-color: #10b981;
+  color: #a7f3d0;
+}
+
+.chip-session {
+  border-color: #8b5cf6;
+  color: #c4b5fd;
+}
+
+.chip-file {
+  border-color: #f59e0b;
+  color: #fde68a;
+}
+
+.chip-resource {
+  border-color: #06b6d4;
+  color: #a5f3fc;
+}
+
+.chip-snapshot {
+  border-color: #ec4899;
+  color: #fbcfe8;
+}

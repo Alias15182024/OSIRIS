@@ -30,14 +30,22 @@ from backend.api.schemas import (
     PaginatedProcessResponse,
     PaginatedResourceSnapshotResponse,
     PaginatedSnapshotResponse,
+    PaginatedTimelineResponse,
+    ProcessContext,
     ProcessQueryParams,
     ProcessResponse,
+    ResourceContext,
     ResourceSnapshotQueryParams,
     ResourceSnapshotResponse,
+    SessionContext,
+    SnapshotContext,
     SnapshotQueryParams,
     SnapshotResponse,
     StatusResponse,
+    TimelineEntryResponse,
+    TimelineQueryParams,
     TokenResponse,
+    UserContext,
     UserResponse,
 )
 from backend.db.models.app_user import AppUser
@@ -772,6 +780,120 @@ class TestSnapshotSchemas:
 
     def test_paginated_snapshot_response_valid(self) -> None:
         paginated = PaginatedSnapshotResponse(
+            total=0,
+            items=[],
+            limit=50,
+            offset=0,
+        )
+        assert paginated.total == 0
+        assert paginated.items == []
+        assert paginated.limit == 50
+        assert paginated.offset == 0
+
+
+# ============================================================================
+# Timeline Schemas Tests (Phase 2 Milestone 2.2)
+# ============================================================================
+
+
+class TestTimelineSchemas:
+    """Test suite for Phase 2 Milestone 2.2 Timeline Pydantic v2 schemas."""
+
+    def test_process_context_valid(self) -> None:
+        pid_uuid = uuid.uuid4()
+        ctx = ProcessContext(
+            process_id=pid_uuid,
+            pid=123,
+            ppid=1,
+            command="/bin/ls",
+            executable="/bin/ls",
+        )
+        assert ctx.process_id == pid_uuid
+        assert ctx.pid == 123
+        assert ctx.ppid == 1
+        assert ctx.command == "/bin/ls"
+        assert ctx.executable == "/bin/ls"
+
+    def test_user_context_valid(self) -> None:
+        uid_uuid = uuid.uuid4()
+        ctx = UserContext(user_id=uid_uuid, uid=1000, username="alice")
+        assert ctx.user_id == uid_uuid
+        assert ctx.uid == 1000
+        assert ctx.username == "alice"
+
+    def test_session_context_valid(self) -> None:
+        sid_uuid = uuid.uuid4()
+        ctx = SessionContext(
+            session_id=sid_uuid,
+            session_type="ssh",
+            terminal="pts/2",
+            remote_host="192.168.1.100",
+        )
+        assert ctx.session_id == sid_uuid
+        assert ctx.session_type == "ssh"
+        assert ctx.terminal == "pts/2"
+        assert ctx.remote_host == "192.168.1.100"
+
+    def test_timeline_query_params_defaults(self) -> None:
+        params = TimelineQueryParams()
+        assert params.host_id is None
+        assert params.start_time is None
+        assert params.end_time is None
+        assert params.record_type is None
+        assert params.order == "asc"
+        assert params.limit == 50
+        assert params.offset == 0
+
+    def test_timeline_query_params_validation(self) -> None:
+        with pytest.raises(ValidationError):
+            TimelineQueryParams(limit=0)
+        with pytest.raises(ValidationError):
+            TimelineQueryParams(limit=101)
+        with pytest.raises(ValidationError):
+            TimelineQueryParams(offset=-1)
+        with pytest.raises(ValidationError):
+            TimelineQueryParams(order="invalid_order")
+        with pytest.raises(ValidationError):
+            TimelineQueryParams(pid=-1)
+        with pytest.raises(ValidationError):
+            TimelineQueryParams(uid=-1)
+
+    def test_timeline_entry_response_valid(self) -> None:
+        eid = uuid.uuid4()
+        hid = uuid.uuid4()
+        sid = uuid.uuid4()
+        t = utcnow()
+        entry = TimelineEntryResponse(
+            id=eid,
+            timestamp=t,
+            host_id=hid,
+            source="proc",
+            source_id=sid,
+            record_type="event",
+            event_type="process.start",
+            action="start",
+            severity="info",
+            description="Process started: /usr/bin/bash (PID 100)",
+            process_context=ProcessContext(pid=100, command="/usr/bin/bash"),
+            user_context=UserContext(uid=1000, username="alice"),
+            session_context=SessionContext(terminal="pts/0"),
+            file_context=None,
+            resource_context=None,
+            snapshot_context=None,
+            payload={"comm": "bash"},
+        )
+        assert entry.id == eid
+        assert entry.timestamp == t
+        assert entry.host_id == hid
+        assert entry.source == "proc"
+        assert entry.source_id == sid
+        assert entry.record_type == "event"
+        assert entry.process_context.pid == 100  # type: ignore[union-attr]
+        assert entry.user_context.username == "alice"  # type: ignore[union-attr]
+        assert entry.payload == {"comm": "bash"}
+
+    def test_paginated_timeline_response_valid(self) -> None:
+        paginated = PaginatedTimelineResponse(
             total=0,
             items=[],
             limit=50,
