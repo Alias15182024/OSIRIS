@@ -23,6 +23,8 @@ class UserSession(Base):
     __table_args__ = (
         Index("ix_sessions_host_started", "host_id", "started_at"),
         Index("ix_sessions_linux_user_id", "linux_user_id"),
+        Index("ix_sessions_host_user_started", "host_id", "linux_user_id", "started_at"),
+        Index("ix_sessions_host_ended", "host_id", "ended_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(

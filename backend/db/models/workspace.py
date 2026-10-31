@@ -39,6 +39,7 @@ class Workspace(Base):
         Index("ix_workspaces_incident_id", "incident_id"),
         Index("ix_workspaces_status", "status"),
         Index("ix_workspaces_created_at", "created_at"),
+        Index("ix_workspaces_owner_status_created", "owner_id", "status", "created_at"),
         CheckConstraint(
             "status IN ('active', 'archived')",
             name="chk_workspace_status",

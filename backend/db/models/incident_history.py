@@ -43,6 +43,8 @@ class IncidentHistory(Base):
         Index("ix_incident_history_incident_id", "incident_id"),
         Index("ix_incident_history_change_type", "change_type"),
         Index("ix_incident_history_created_at", "created_at"),
+        Index("ix_incident_history_inc_created", "incident_id", "created_at"),
+        Index("ix_incident_history_user_id", "user_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(

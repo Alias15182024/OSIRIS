@@ -40,6 +40,8 @@ class Incident(Base):
         Index("ix_incidents_category", "category"),
         Index("ix_incidents_assigned_to_id", "assigned_to_id"),
         Index("ix_incidents_created_at", "created_at"),
+        Index("ix_incidents_host_created", "host_id", "created_at"),
+        Index("ix_incidents_host_status", "host_id", "status", "created_at"),
         CheckConstraint(
             "severity IN ('info', 'low', 'medium', 'high', 'critical')",
             name="chk_incident_severity",

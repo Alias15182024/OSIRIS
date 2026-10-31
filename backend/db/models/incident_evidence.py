@@ -54,6 +54,11 @@ class IncidentEvidence(Base):
         Index("ix_incident_evidence_detection_id", "detection_id"),
         Index("ix_incident_evidence_fim_dev_id", "fim_deviation_id"),
         Index("ix_incident_evidence_event_id", "event_id"),
+        Index("ix_incident_evidence_session_id", "session_id"),
+        Index("ix_incident_evidence_snapshot_id", "snapshot_id"),
+        Index("ix_incident_evidence_process_id", "process_id"),
+        Index("ix_incident_evidence_file_id", "file_id"),
+        Index("ix_incident_evidence_inc_type", "incident_id", "evidence_type"),
         UniqueConstraint(
             "incident_id",
             "evidence_type",

@@ -52,6 +52,9 @@ class Event(Base):
         Index("ix_events_source", "source"),
         Index("ix_events_severity", "severity"),
         Index("ix_events_process_id", "process_id"),
+        Index("ix_events_host_uid", "host_id", "uid"),
+        Index("ix_events_host_pid", "host_id", "pid", "timestamp"),
+        Index("ix_events_host_event_type_ts", "host_id", "event_type", "timestamp"),
         CheckConstraint(
             "severity IN ('info', 'low', 'medium', 'high', 'critical')",
             name="severity_valid",

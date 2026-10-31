@@ -15,7 +15,7 @@ Tests verify migration 0002_normalize_file_types:
 import os
 import subprocess
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Generator
 
@@ -2073,5 +2073,518 @@ class TestWorkspaceMigrationPostgreSQL:
         # Re-upgrade to 0007
         command.upgrade(alembic_cfg, "0007_workspaces_and_annotations")
         assert _get_current_revision(engine) == "0007_workspaces_and_annotations"
+
+        engine.dispose()
+
+
+class TestOptimizationMigrationSQLite:
+    """Test 0008_database_optimization against an isolated SQLite database."""
+
+    def test_upgrade_downgrade_views_and_triggers_sqlite(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        db_file = tmp_path / "test_opt_mig.db"
+        db_url = f"sqlite:///{db_file}"
+
+        monkeypatch.setenv("OSIRIS_DATABASE_URL", db_url)
+        monkeypatch.setattr(settings, "database_url", db_url)
+
+        alembic_cfg = Config("alembic.ini")
+        alembic_cfg.set_main_option("sqlalchemy.url", db_url)
+
+        # 1. Upgrade through 0007
+        command.upgrade(alembic_cfg, "0007_workspaces_and_annotations")
+        engine = sa.create_engine(db_url)
+        assert _get_current_revision(engine) == "0007_workspaces_and_annotations"
+
+        # 2. Upgrade to 0008_database_optimization
+        command.upgrade(alembic_cfg, "0008_database_optimization")
+        assert _get_current_revision(engine) == "0008_database_optimization"
+
+        inspector = sa.inspect(engine)
+
+        # Verify new indexes
+        event_indexes = {idx["name"] for idx in inspector.get_indexes("events")}
+        assert "ix_events_host_uid" in event_indexes
+        assert "ix_events_host_pid" in event_indexes
+        assert "ix_events_host_event_type_ts" in event_indexes
+
+        proc_indexes = {idx["name"] for idx in inspector.get_indexes("processes")}
+        assert "ix_processes_host_started" in proc_indexes
+        assert "ix_processes_host_user" in proc_indexes
+        assert "ix_processes_host_ended" in proc_indexes
+
+        sess_indexes = {idx["name"] for idx in inspector.get_indexes("sessions")}
+        assert "ix_sessions_host_user_started" in sess_indexes
+        assert "ix_sessions_host_ended" in sess_indexes
+
+        det_indexes = {idx["name"] for idx in inspector.get_indexes("detections")}
+        assert "ix_detections_host_status_ts" in det_indexes
+
+        inc_indexes = {idx["name"] for idx in inspector.get_indexes("incidents")}
+        assert "ix_incidents_host_created" in inc_indexes
+        assert "ix_incidents_host_status" in inc_indexes
+
+        ev_indexes = {idx["name"] for idx in inspector.get_indexes("incident_evidence")}
+        assert "ix_incident_evidence_session_id" in ev_indexes
+        assert "ix_incident_evidence_snapshot_id" in ev_indexes
+        assert "ix_incident_evidence_process_id" in ev_indexes
+        assert "ix_incident_evidence_file_id" in ev_indexes
+        assert "ix_incident_evidence_inc_type" in ev_indexes
+
+        # Verify views exist in sqlite_master
+        with engine.connect() as conn:
+            views = [
+                row[0]
+                for row in conn.execute(
+                    sa.text("SELECT name FROM sqlite_master WHERE type='view'")
+                ).fetchall()
+            ]
+            assert "view_active_detections" in views
+            assert "view_incident_summary" in views
+            assert "view_fim_deviation_details" in views
+            assert "view_process_lineage" in views
+            assert "view_session_overview" in views
+
+            triggers = [
+                row[0]
+                for row in conn.execute(
+                    sa.text("SELECT name FROM sqlite_master WHERE type='trigger'")
+                ).fetchall()
+            ]
+            assert "trg_hosts_updated_at" in triggers
+            assert "trg_incidents_updated_at" in triggers
+            assert "trg_incident_history_immutable" in triggers
+            assert "trg_incident_history_no_delete" in triggers
+            assert "trg_app_audit_log_immutable" in triggers
+            assert "trg_app_audit_log_no_delete" in triggers
+
+        # 3. Test View Querying and Correctness with inserted data
+        host_id = uuid.uuid4()
+        user_id = uuid.uuid4()
+        parent_proc_id = uuid.uuid4()
+        proc_id = uuid.uuid4()
+        sess_id = uuid.uuid4()
+        inc_id = uuid.uuid4()
+        ev_id = uuid.uuid4()
+        rule_db_id = uuid.uuid4()
+        det_id = uuid.uuid4()
+        base_id = uuid.uuid4()
+        base_file_id = uuid.uuid4()
+        dev_id = uuid.uuid4()
+        now = _utcnow()
+
+        with engine.begin() as conn:
+            conn.execute(
+                _hosts_table.insert().values(
+                    id=host_id, hostname="forensic-srv01", created_at=now
+                )
+            )
+            conn.execute(
+                _linux_users_table.insert().values(
+                    id=user_id, host_id=host_id, uid=1000, username="analyst", first_seen_at=now, created_at=now
+                )
+            )
+            procs_tbl = sa.table(
+                "processes",
+                sa.column("id", sa.Uuid),
+                sa.column("host_id", sa.Uuid),
+                sa.column("pid", sa.Integer),
+                sa.column("ppid", sa.Integer),
+                sa.column("command", sa.String),
+                sa.column("executable", sa.String),
+                sa.column("linux_user_id", sa.Uuid),
+                sa.column("started_at", sa.DateTime(timezone=True)),
+                sa.column("created_at", sa.DateTime(timezone=True)),
+            )
+            conn.execute(
+                procs_tbl.insert().values(
+                    id=parent_proc_id,
+                    host_id=host_id,
+                    pid=1,
+                    ppid=0,
+                    command="/sbin/init",
+                    executable="/sbin/init",
+                    linux_user_id=None,
+                    started_at=now - timedelta(hours=1),
+                    created_at=now - timedelta(hours=1),
+                )
+            )
+            conn.execute(
+                procs_tbl.insert().values(
+                    id=proc_id,
+                    host_id=host_id,
+                    pid=1234,
+                    ppid=1,
+                    command="/usr/bin/python3 suspicious.py",
+                    executable="/usr/bin/python3",
+                    linux_user_id=user_id,
+                    started_at=now,
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                _sessions_table.insert().values(
+                    id=sess_id,
+                    host_id=host_id,
+                    linux_user_id=user_id,
+                    session_type="ssh",
+                    terminal="pts/1",
+                    remote_host="192.168.1.50",
+                    started_at=now,
+                    ended_at=None,
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                _incidents_table.insert().values(
+                    id=inc_id,
+                    title="Suspicious Privilege Escalation",
+                    description="Unusual process execution",
+                    severity="high",
+                    status="investigating",
+                    category="privilege_escalation",
+                    host_id=host_id,
+                    created_by_id=None,
+                    assigned_to_id=None,
+                    first_observed_at=now,
+                    last_observed_at=now,
+                    created_at=now,
+                    updated_at=None,
+                )
+            )
+            conn.execute(
+                _incident_evidence_table.insert().values(
+                    id=ev_id,
+                    incident_id=inc_id,
+                    evidence_type="process",
+                    source_id=str(proc_id),
+                    title="Suspicious Process",
+                    provenance={"cmd": "suspicious.py"},
+                    process_id=proc_id,
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                _detection_rules_table.insert().values(
+                    id=rule_db_id,
+                    rule_id="RULE-SEC-001",
+                    name="Privilege Escalation Rule",
+                    description="Detects priv esc",
+                    category="privilege_escalation",
+                    severity="high",
+                    enabled=True,
+                    version=1,
+                    rule_type="single_event",
+                    conditions={"field": "action", "operator": "equals", "value": "escalate"},
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                _detections_table.insert().values(
+                    id=det_id,
+                    rule_id=rule_db_id,
+                    rule_version=1,
+                    host_id=host_id,
+                    timestamp=now,
+                    severity="high",
+                    title="Detected escalation",
+                    description="Alert description",
+                    category="privilege_escalation",
+                    status="open",
+                    notification_status="pending",
+                    matched_conditions={},
+                    evidence={},
+                    dedup_hash="hash-1234567890",
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                _fim_baselines_table.insert().values(
+                    id=base_id,
+                    host_id=host_id,
+                    version=1,
+                    status="completed",
+                    path_scope=["/etc"],
+                    total_files=10,
+                    total_bytes=2048,
+                    baseline_at=now,
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                _fim_baseline_files_table.insert().values(
+                    id=base_file_id,
+                    baseline_id=base_id,
+                    host_id=host_id,
+                    file_path="/etc/shadow",
+                    file_name="shadow",
+                    file_type="file",
+                    hash_sha256="sha256_shadow_golden",
+                    permissions="0640",
+                    file_size=1024,
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                _fim_deviations_table.insert().values(
+                    id=dev_id,
+                    host_id=host_id,
+                    baseline_id=base_id,
+                    baseline_file_id=base_file_id,
+                    file_path="/etc/shadow",
+                    deviation_type="modified_file",
+                    severity="critical",
+                    detected_at=now,
+                    created_at=now,
+                )
+            )
+
+        with engine.connect() as conn:
+            # Query view_incident_summary
+            inc_summary = conn.execute(
+                sa.text("SELECT incident_id, title, status, hostname, evidence_count FROM view_incident_summary WHERE incident_id = :id OR incident_id = :id_hex"),
+                {"id": str(inc_id), "id_hex": inc_id.hex},
+            ).one()
+            assert inc_summary.title == "Suspicious Privilege Escalation"
+            assert inc_summary.status == "investigating"
+            assert inc_summary.hostname == "forensic-srv01"
+            assert inc_summary.evidence_count == 1
+
+            # Query view_active_detections
+            act_det = conn.execute(
+                sa.text("SELECT detection_id, rule_identifier, rule_name, hostname FROM view_active_detections WHERE detection_id = :id OR detection_id = :id_hex"),
+                {"id": str(det_id), "id_hex": det_id.hex},
+            ).one()
+            assert act_det.rule_identifier == "RULE-SEC-001"
+            assert act_det.rule_name == "Privilege Escalation Rule"
+            assert act_det.hostname == "forensic-srv01"
+
+            # Query view_fim_deviation_details
+            fim_dev = conn.execute(
+                sa.text("SELECT deviation_id, file_path, baseline_version, hostname, expected_hash_sha256 FROM view_fim_deviation_details WHERE deviation_id = :id OR deviation_id = :id_hex"),
+                {"id": str(dev_id), "id_hex": dev_id.hex},
+            ).one()
+            assert fim_dev.file_path == "/etc/shadow"
+            assert fim_dev.baseline_version == 1
+            assert fim_dev.hostname == "forensic-srv01"
+            assert fim_dev.expected_hash_sha256 == "sha256_shadow_golden"
+
+            # Query view_process_lineage
+            proc_lin = conn.execute(
+                sa.text("SELECT process_id, command, uid, username, hostname, parent_command FROM view_process_lineage WHERE process_id = :id OR process_id = :id_hex"),
+                {"id": str(proc_id), "id_hex": proc_id.hex},
+            ).one()
+            assert proc_lin.command == "/usr/bin/python3 suspicious.py"
+            assert proc_lin.uid == 1000
+            assert proc_lin.username == "analyst"
+            assert proc_lin.parent_command == "/sbin/init"
+
+            # Query view_session_overview
+            sess_ov = conn.execute(
+                sa.text("SELECT session_id, session_type, username, hostname FROM view_session_overview WHERE session_id = :id OR session_id = :id_hex"),
+                {"id": str(sess_id), "id_hex": sess_id.hex},
+            ).one()
+            assert sess_ov.session_type == "ssh"
+            assert sess_ov.username == "analyst"
+
+        # 4. Test Trigger Behavior
+        with engine.begin() as conn:
+            # Positive trigger: updating incident title automatically sets updated_at
+            conn.execute(
+                sa.text("UPDATE incidents SET title = 'Escalation Confirmed' WHERE id = :id OR id = :id_hex"),
+                {"id": str(inc_id), "id_hex": inc_id.hex},
+            )
+        with engine.connect() as conn:
+            updated_at = conn.execute(
+                sa.text("SELECT updated_at FROM incidents WHERE id = :id OR id = :id_hex"),
+                {"id": str(inc_id), "id_hex": inc_id.hex},
+            ).scalar()
+            assert updated_at is not None
+
+        # Negative trigger: updating incident_history must be aborted
+        hist_id = uuid.uuid4()
+        with engine.begin() as conn:
+            conn.execute(
+                _incident_history_table.insert().values(
+                    id=hist_id,
+                    incident_id=inc_id,
+                    change_type="status_change",
+                    from_status="open",
+                    to_status="investigating",
+                    user_id=None,
+                    notes="Analyst started investigation",
+                    created_at=now,
+                )
+            )
+
+        with pytest.raises(Exception):
+            with engine.begin() as conn:
+                conn.execute(
+                    sa.text("UPDATE incident_history SET notes = 'Tampered note' WHERE id = :id OR id = :id_hex"),
+                    {"id": str(hist_id), "id_hex": hist_id.hex},
+                )
+
+        # Negative trigger: deleting incident_history must be aborted
+        with pytest.raises(Exception):
+            with engine.begin() as conn:
+                conn.execute(
+                    sa.text("DELETE FROM incident_history WHERE id = :id OR id = :id_hex"),
+                    {"id": str(hist_id), "id_hex": hist_id.hex},
+                )
+
+        # Negative trigger: updating & deleting app_audit_log must be aborted
+        audit_id = uuid.uuid4()
+        with engine.begin() as conn:
+            conn.execute(
+                sa.table(
+                    "app_audit_log",
+                    sa.column("id", sa.Uuid),
+                    sa.column("action", sa.String),
+                    sa.column("created_at", sa.DateTime(timezone=True)),
+                ).insert().values(
+                    id=audit_id,
+                    action="user.login",
+                    created_at=now,
+                )
+            )
+
+        with pytest.raises(Exception):
+            with engine.begin() as conn:
+                conn.execute(
+                    sa.text("UPDATE app_audit_log SET action = 'tampered' WHERE id = :id OR id = :id_hex"),
+                    {"id": str(audit_id), "id_hex": audit_id.hex},
+                )
+
+        with pytest.raises(Exception):
+            with engine.begin() as conn:
+                conn.execute(
+                    sa.text("DELETE FROM app_audit_log WHERE id = :id OR id = :id_hex"),
+                    {"id": str(audit_id), "id_hex": audit_id.hex},
+                )
+
+        # 5. Downgrade to 0007_workspaces_and_annotations
+        command.downgrade(alembic_cfg, "0007_workspaces_and_annotations")
+        assert _get_current_revision(engine) == "0007_workspaces_and_annotations"
+
+        with engine.connect() as conn:
+            down_views = [
+                row[0]
+                for row in conn.execute(
+                    sa.text("SELECT name FROM sqlite_master WHERE type='view'")
+                ).fetchall()
+            ]
+            assert "view_active_detections" not in down_views
+            assert "view_incident_summary" not in down_views
+
+            down_triggers = [
+                row[0]
+                for row in conn.execute(
+                    sa.text("SELECT name FROM sqlite_master WHERE type='trigger'")
+                ).fetchall()
+            ]
+            assert "trg_incidents_updated_at" not in down_triggers
+            assert "trg_incident_history_immutable" not in down_triggers
+            assert "trg_incident_history_no_delete" not in down_triggers
+            assert "trg_app_audit_log_no_delete" not in down_triggers
+
+        # 6. Re-upgrade to 0008_database_optimization is idempotent
+        command.upgrade(alembic_cfg, "0008_database_optimization")
+        assert _get_current_revision(engine) == "0008_database_optimization"
+
+        with engine.connect() as conn:
+            reup_views = [
+                row[0]
+                for row in conn.execute(
+                    sa.text("SELECT name FROM sqlite_master WHERE type='view'")
+                ).fetchall()
+            ]
+            assert "view_incident_summary" in reup_views
+
+        engine.dispose()
+
+
+class TestOptimizationMigrationPostgreSQL:
+    """Test 0008_database_optimization against an isolated disposable PostgreSQL database."""
+
+    def test_upgrade_and_downgrade_optimization_postgres(
+        self, disposable_pg_url: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("OSIRIS_DATABASE_URL", disposable_pg_url)
+        monkeypatch.setattr(settings, "database_url", disposable_pg_url)
+
+        alembic_cfg = Config("alembic.ini")
+        alembic_cfg.set_main_option("sqlalchemy.url", disposable_pg_url)
+
+        # 1. Upgrade through 0007
+        command.upgrade(alembic_cfg, "0007_workspaces_and_annotations")
+        engine = sa.create_engine(disposable_pg_url)
+        assert _get_current_revision(engine) == "0007_workspaces_and_annotations"
+
+        # 2. Upgrade to 0008
+        command.upgrade(alembic_cfg, "0008_database_optimization")
+        assert _get_current_revision(engine) == "0008_database_optimization"
+
+        # Verify views and triggers in PostgreSQL
+        with engine.connect() as conn:
+            views = [
+                row[0]
+                for row in conn.execute(
+                    sa.text("SELECT table_name FROM information_schema.views WHERE table_schema='public'")
+                ).fetchall()
+            ]
+            assert "view_active_detections" in views
+            assert "view_incident_summary" in views
+            assert "view_fim_deviation_details" in views
+            assert "view_process_lineage" in views
+            assert "view_session_overview" in views
+
+            triggers = [
+                row[0]
+                for row in conn.execute(
+                    sa.text("SELECT trigger_name FROM information_schema.triggers WHERE trigger_schema='public'")
+                ).fetchall()
+            ]
+            assert "trg_incidents_updated_at" in triggers
+            assert "trg_hosts_updated_at" in triggers
+            assert "trg_incident_history_immutable" in triggers
+
+        # Verify PostgreSQL immutability trigger blocks update and delete
+        inc_id = uuid.uuid4()
+        hist_id = uuid.uuid4()
+        now = _utcnow()
+        with engine.begin() as conn:
+            conn.execute(_hosts_table.insert().values(id=uuid.uuid4(), hostname="pg-immut-host", created_at=now))
+            conn.execute(_incidents_table.insert().values(
+                id=inc_id, title="PG Incident", severity="low", status="open", category="general", created_at=now
+            ))
+            conn.execute(_incident_history_table.insert().values(
+                id=hist_id, incident_id=inc_id, change_type="created", notes="Initial entry", created_at=now
+            ))
+
+        with pytest.raises(Exception):
+            with engine.begin() as conn:
+                conn.execute(sa.text("UPDATE incident_history SET notes = 'tampered' WHERE id = :id"), {"id": hist_id})
+
+        with pytest.raises(Exception):
+            with engine.begin() as conn:
+                conn.execute(sa.text("DELETE FROM incident_history WHERE id = :id"), {"id": hist_id})
+
+        # Downgrade back to 0007
+        command.downgrade(alembic_cfg, "0007_workspaces_and_annotations")
+        assert _get_current_revision(engine) == "0007_workspaces_and_annotations"
+
+        with engine.connect() as conn:
+            down_views = [
+                row[0]
+                for row in conn.execute(
+                    sa.text("SELECT table_name FROM information_schema.views WHERE table_schema='public'")
+                ).fetchall()
+            ]
+            assert "view_active_detections" not in down_views
+
+        # Re-upgrade to 0008
+        command.upgrade(alembic_cfg, "0008_database_optimization")
+        assert _get_current_revision(engine) == "0008_database_optimization"
 
         engine.dispose()

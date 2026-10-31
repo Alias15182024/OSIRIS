@@ -131,7 +131,7 @@ class FimService:
             )
             db.add(base_file)
 
-        db.commit()
+        db.flush()
         db.refresh(baseline)
         return baseline
 
@@ -285,7 +285,7 @@ class FimService:
                     d.evidence = ev_dict
                 new_detections.append(d)
 
-        db.commit()
+        db.flush()
         return baseline, persisted_deviations, new_detections
 
     def get_baselines(

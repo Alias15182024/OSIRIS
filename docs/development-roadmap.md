@@ -471,21 +471,31 @@ the Event Processing Layer (Milestone 1.3).
 
 ---
 
-### Milestone 2.8 — Database Enhancements
+### Milestone 2.8 — Database Enhancements (Completed)
 
-**Goal:** Apply advanced PostgreSQL features.
+**Goal:** Apply advanced PostgreSQL features, optimized forensic indexing, triggers, views, and concurrency controls.
 
-- [ ] Views for common investigation queries
-- [ ] Triggers for automatic timestamp updates
-- [ ] Optimized indexes based on observed query patterns
-- [ ] Transaction isolation review
-- [ ] Concurrency handling for incident updates
+- [x] Views for common investigation queries (`view_active_detections`, `view_incident_summary`, `view_fim_deviation_details`, `view_process_lineage`, `view_session_overview`)
+- [x] Triggers for automatic timestamp updates (`hosts`, `incidents`, `workspaces`, `detection_rules`, `evidence_annotations`) and append-only immutability protection on `incident_history` and `app_audit_log`
+- [x] Optimized indexes based on observed query patterns (23 composite, foreign key, and timestamp indexes across events, processes, sessions, detections, incidents, and workspaces)
+- [x] Transaction isolation review and elimination of rogue commits in service layers (`FimService`, `IncidentService`)
+- [x] Concurrency handling for incident updates (row-level locking via `for_update=True` and conditional `eager_load=False`)
+- [x] Multi-source timeline query optimization with batch prefetching eliminating N+1 queries
+- [x] Repeatable benchmark utility (`scripts/benchmark_db.py`) validating query latencies under SLA
 
 **Testing Checkpoint:**
-- Views return correct results
-- Triggers fire correctly
-- Query performance is acceptable
-- Concurrent operations do not corrupt data
+- Views return correct results and handle UUID formats across dialects
+- Triggers fire correctly (timestamps update on touch; history/audit updates raise errors)
+- Query performance is acceptable (<500ms timeline, <200ms detections/FIM/incidents)
+- Concurrent operations do not corrupt data; row-level locks prevent lost updates
+- Reversible Alembic migration `0008_database_optimization.py` passes cleanly on SQLite and PostgreSQL
+
+**Milestone 2.8 Validation Evidence:**
+- **Full Test Suite:** 1,301 passed, 12 skipped, 2 warnings in 31.09s
+- **Targeted Test Suites:**
+  - `tests/unit/test_migrations.py` (17 passed: reversible SQLite & PostgreSQL upgrades/downgrades for `0008_database_optimization`)
+  - `tests/unit/test_database_benchmarks.py` (8 passed: timeline N+1 query elimination, detection filtering, FIM inventory, incident locking, workspace graph, search, session-process correlation, snapshot collection)
+  - `scripts/benchmark_db.py`: Multi-scale forensic performance benchmark tool validating dual-dialect sub-second execution across all critical forensic operations.
 
 ---
 
@@ -494,11 +504,11 @@ the Event Processing Layer (Milestone 1.3).
 ```text
 Phase 1: Observe
   1.1 Project Foundation          ← Completed
-  1.2 Database Setup
-  1.3 Event Processing
+  1.2 Database Setup              ← Completed
+  1.3 Event Processing            ← Completed
   1.4 Collectors (1.4A–1.4E)      ← Completed
-  1.5 Backend API (Basic)
-  1.6 Basic Web Dashboard
+  1.5 Backend API (Basic)         ← Completed
+  1.6 Basic Web Dashboard         ← Completed
 
 Phase 2: Reconstruct & Detect
   2.1 Historical Storage, Snapshots & Session Tracking  ← Completed
@@ -508,7 +518,7 @@ Phase 2: Reconstruct & Detect
   2.5 File Integrity Monitoring                         ← Completed
   2.6 Alert & Incident Management                       ← Completed
   2.7 Investigation Interface                           ← Completed
-  2.8 Database Enhancements
+  2.8 Database Enhancements                             ← Completed
 ```
 
 ---

@@ -46,6 +46,7 @@ class Detection(Base):
         Index("ix_detections_category", "category"),
         Index("ix_detections_dedup_hash", "dedup_hash", unique=True),
         Index("ix_detections_fim_deviation_id", "fim_deviation_id"),
+        Index("ix_detections_host_status_ts", "host_id", "status", "timestamp"),
         CheckConstraint(
             "severity IN ('info', 'low', 'medium', 'high', 'critical')",
             name="chk_detection_severity",

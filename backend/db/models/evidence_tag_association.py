@@ -31,6 +31,7 @@ class EvidenceTagAssociation(Base):
         Index("ix_evidence_tag_assoc_tag_id", "tag_id"),
         Index("ix_evidence_tag_assoc_target", "evidence_type", "evidence_id"),
         Index("ix_evidence_tag_assoc_host_id", "host_id"),
+        Index("ix_evidence_tag_assoc_host_tag", "host_id", "tag_id"),
         UniqueConstraint(
             "tag_id", "evidence_type", "evidence_id",
             name="uq_evidence_tag_assoc",

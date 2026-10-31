@@ -32,6 +32,7 @@ class EvidenceAnnotation(Base):
         Index("ix_evidence_annotations_workspace_id", "workspace_id"),
         Index("ix_evidence_annotations_author_id", "author_id"),
         Index("ix_evidence_annotations_created_at", "created_at"),
+        Index("ix_evidence_annotations_host_id", "host_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(

@@ -792,6 +792,38 @@ class TimelineService:
             for f in self._session.execute(f_stmt).scalars():
                 files_map[f.id] = f
 
+        # Batch prefetch correlated entities across all hosts and time window in page to eliminate N+1 queries
+        host_ids = {r.host_id for r in rows if getattr(r, "host_id", None) is not None}
+        self._correlator.prefetch_users(host_ids)
+
+        if events_map:
+            event_proc_ids = {e.process_id for e in events_map.values() if e.process_id is not None}
+            if event_proc_ids:
+                self._correlator.prefetch_processes(event_proc_ids)
+
+            file_paths_by_host: dict[uuid.UUID, set[str]] = {}
+            for e in events_map.values():
+                if (e.object_type == "file" or e.source == "fs" or e.object_path) and e.object_path:
+                    file_paths_by_host.setdefault(e.host_id, set()).add(e.object_path)
+            if file_paths_by_host:
+                self._correlator.prefetch_files(file_paths_by_host)
+
+        timestamps = [
+            _ensure_utc(r.timestamp)
+            for r in rows
+            if getattr(r, "timestamp", None) is not None
+        ]
+        valid_ts = [t for t in timestamps if t is not None]
+        if valid_ts:
+            min_ts = min(valid_ts)
+            max_ts = max(valid_ts)
+            self._correlator.prefetch_sessions(host_ids, min_ts, max_ts)
+            self._correlator.prefetch_snapshots(host_ids, min_ts, max_ts)
+            if table_ids["resource_snapshots"] or any(
+                getattr(e, "source", None) == "resource" for e in events_map.values()
+            ):
+                self._correlator.prefetch_resources(host_ids, min_ts, max_ts)
+
         # Build responses in exact row order
         results: list[TimelineEntryResponse] = []
 
@@ -864,8 +896,8 @@ class TimelineService:
         if proc_ctx is None and (event.pid is not None or event.command is not None):
             valid_proc_id = event.process_id
             if valid_proc_id is not None and self._session is not None:
-                p_check = self._session.get(Process, valid_proc_id)
-                if p_check is not None and p_check.host_id != event.host_id:
+                p_ctx = self._correlator.correlate_process_by_id(event.host_id, valid_proc_id)
+                if p_ctx is None:
                     valid_proc_id = None
 
             proc_ctx = ProcessContext(

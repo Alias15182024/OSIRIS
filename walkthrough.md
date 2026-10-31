@@ -963,7 +963,54 @@ All Milestone 2.6 components have been implemented, verified through automated u
 - **`tests/unit/test_api_graph.py` (5 passed)**: Unauthenticated rejection (401), initial host graph retrieval, node expansion, snapshot expansion, and entity pivots.
 - **`tests/unit/test_api_search.py` (4 passed)**: Unauthenticated rejection (401), quick search, multi-criteria advanced search, and snapshot filtering.
 - **`tests/unit/test_api_annotations.py` (9 passed)**: Unauthenticated rejection (401), RBAC (403 for viewers on create and update), tag creation, update and listing, polymorphic association and queries, and analyst notes CRUD lifecycle.
-- **`tests/unit/test_workspace_view_contract.py` (10 passed)**: Static JavaScript delivery, HTML element existence, unified view layout verification, zero `localStorage`, zero `innerHTML`, zero `eval`, zero hardcoded secrets, and Apple JavaScriptCore syntax execution.
+---
 
+## 3. Milestone 2.8 Verification Results (Database Enhancements & Performance)
 
+### 3.1 Migration `0008_database_optimization.py`
+- **Dialect Parity:** Fully reversible migration implementing 23 specialized indexes, 5 forensic views, and automatic triggers across both PostgreSQL and SQLite.
+- **Indexes:**
+  - `events`: `ix_events_host_uid`, `ix_events_host_pid`, `ix_events_host_event_type_ts`
+  - `processes`: `ix_processes_host_started`, `ix_processes_host_user`, `ix_processes_host_ended`
+  - `sessions`: `ix_sessions_host_user_started`, `ix_sessions_host_ended`
+  - `detections`: `ix_detections_host_status_ts`
+  - `incidents`: `ix_incidents_host_created`, `ix_incidents_host_status`
+  - `incident_evidence`: `session_id`, `snapshot_id`, `process_id`, `file_id`, `(incident_id, evidence_type)`
+  - `incident_history`: `(incident_id, created_at DESC)`, `user_id`
+  - `fim_deviations`: `(host_id, detected_at DESC)`, `(host_id, severity, detected_at DESC)`
+  - `workspaces`: `(owner_id, status, created_at DESC)`
+  - `evidence_annotations`: `host_id`
+  - `evidence_tag_associations`: `(host_id, tag_id)`
+- **Forensic Views:**
+  - `view_active_detections`: Joins open detections with host networking and rule provenance.
+  - `view_incident_summary`: Aggregates incident lifecycle timestamps with attached evidence counts.
+  - `view_fim_deviation_details`: Denormalizes baseline expected file hashes/permissions without application-level JOINs.
+  - `view_process_lineage`: Reconstructs host-scoped parent-child process execution hierarchy.
+  - `view_session_overview`: Combines user session telemetry with resolved Linux user identities.
+- **Automated Triggers:**
+  - `updated_at` timestamps update automatically on updates to `hosts`, `incidents`, `workspaces`, `detection_rules`, and `evidence_annotations`.
+  - Immutability protection triggers abort updates and deletions to `incident_history` and `app_audit_log`.
 
+### 3.2 Query & Transaction Optimizations
+- **N+1 Elimination in Timeline Reconstruction:**
+  - `TimelineService._hydrate_and_correlate` and `EntityCorrelator` prefetch users, processes, files, sessions, snapshots, and resources across the page's time window in bulk queries, with PID resolution caching.
+  - Reduced query count from 151 queries down to 10 queries for a 50-event page (>93% reduction in database round-trips).
+- **Caller-Owned Transaction Boundaries:**
+  - Removed rogue `db.commit()` calls from `FimService` and `IncidentService`, replaced with `db.flush()`.
+  - API route handlers own transaction boundaries and commit once at the request lifecycle end.
+- **Incident Concurrency Control:**
+  - `IncidentService.get_incident` supports `eager_load: bool = True` and `for_update: bool = False`.
+  - Status transitions and updates use `eager_load=False, for_update=True`, issuing `SELECT ... FOR UPDATE` row-level locks and skipping expensive ORM tree loading.
+
+### 3.3 Verification Evidence
+- **Full Test Suite:** 1,301 passed, 12 skipped, 2 warnings in 31.09s (`./.venv/bin/pytest`).
+- **Targeted Migration Tests (`tests/unit/test_migrations.py`):** 17 passed (including SQLite & PostgreSQL upgrades, downgrades, and re-upgrades for migration 0008).
+- **Targeted Benchmark Tests (`tests/unit/test_database_benchmarks.py`):** 8 passed.
+- **Standalone Benchmark Utility (`scripts/benchmark_db.py`):**
+  - Timeline reconstruction: 45.30ms (SLA < 500ms)
+  - Detection filtering: 6.93ms (SLA < 200ms)
+  - FIM baseline & deviation: 8.04ms (SLA < 200ms)
+  - Incident locking: 25.23ms (SLA < 200ms)
+  - Graph expansion: 7.25ms (SLA < 300ms)
+  - Forensic search: 9.06ms (SLA < 300ms)
+  - 5 Forensic views aggregation: 5.62ms (SLA < 250ms)

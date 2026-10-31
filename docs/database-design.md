@@ -708,74 +708,182 @@ directly alongside the `process_id` FK. This is intentional:
 | alerts            | (timestamp)                    | Alert timeline                 |
 | app_audit_log     | (created_at)                   | Audit chronology               |
 
-### 5.2 Indexing Strategy
+### 5.3 Forensic Optimization Indexes (Phase 2 — Milestone 2.8)
 
-- Use B-tree indexes for equality and range comparisons (default)
-- Consider GIN indexes on JSONB `payload` columns if full-payload queries
-  become necessary
-- Avoid over-indexing: add indexes only when query patterns justify them
-- Monitor query plans during development to validate index usage
+Migration `0008_database_optimization.py` introduced 23 specialized compound, foreign key, and timestamp indexes based on observed query access patterns across timeline reconstruction, detection matching, FIM integrity checks, and workspace analysis:
 
----
-
-## 6. Transaction Considerations
-
-### 6.1 Event Ingestion
-
-- Batch event inserts should use transactions to ensure atomicity
-- If a batch partially fails, the entire batch should be rolled back
-- Use `INSERT ... ON CONFLICT` where appropriate to handle edge cases
-
-### 6.2 Alert and Incident Updates
-
-- Alert status changes and incident assignments must be atomic
-- Concurrent updates to the same incident should be handled with
-  row-level locking (`SELECT ... FOR UPDATE`)
-
-### 6.3 Isolation Level
-
-- Default to `READ COMMITTED` isolation level
-- Use `SERIALIZABLE` only where strict consistency is required
-  (e.g., file integrity baseline comparisons in Phase 2)
-
-### 6.4 Connection Pooling
-
-- Use SQLAlchemy's built-in connection pooling
-- Configure pool size based on expected concurrent operations
-- Use context managers to ensure connections are returned to the pool
+| Table | Index Name | Columns / Expressions | Optimization Target |
+|---|---|---|---|
+| `events` | `ix_events_host_uid` | `(host_id, uid)` | User-filtered timeline & activity queries |
+| `events` | `ix_events_host_pid` | `(host_id, pid)` | Process PID timeline reconstruction |
+| `events` | `ix_events_host_event_type_ts` | `(host_id, event_type, timestamp DESC)` | Event-type bounded timeline queries |
+| `processes` | `ix_processes_host_started` | `(host_id, started_at)` | Process chronological enumeration |
+| `processes` | `ix_processes_host_user` | `(host_id, linux_user_id)` | User-process correlation lookups |
+| `processes` | `ix_processes_host_ended` | `(host_id, ended_at)` | Active running process queries (`ended_at IS NULL`) |
+| `sessions` | `ix_sessions_host_user_started` | `(host_id, linux_user_id, started_at)` | User login session correlation |
+| `sessions` | `ix_sessions_host_ended` | `(host_id, ended_at)` | Active login session tracking |
+| `detections` | `ix_detections_host_status_ts` | `(host_id, status, timestamp DESC)` | Active alert triage and status filtering |
+| `incidents` | `ix_incidents_host_created` | `(host_id, created_at DESC)` | Host incident chronology listing |
+| `incidents` | `ix_incidents_host_status` | `(host_id, status)` | Status-filtered incident queues |
+| `incident_evidence` | `ix_incident_evidence_session_id` | `(session_id)` | Session evidence reverse lookup |
+| `incident_evidence` | `ix_incident_evidence_snapshot_id`| `(snapshot_id)` | Snapshot evidence reverse lookup |
+| `incident_evidence` | `ix_incident_evidence_process_id` | `(process_id)` | Process evidence reverse lookup |
+| `incident_evidence` | `ix_incident_evidence_file_id`    | `(file_id)` | File evidence reverse lookup |
+| `incident_evidence` | `ix_incident_evidence_inc_type`   | `(incident_id, evidence_type)` | Incident evidence tab filtering |
+| `incident_history`  | `ix_incident_history_inc_created` | `(incident_id, created_at DESC)` | Incident timeline audit chronology |
+| `incident_history`  | `ix_incident_history_user_id`     | `(user_id)` | Analyst attribution lookups |
+| `fim_deviations`    | `ix_fim_deviations_host_detected` | `(host_id, detected_at DESC)` | Host deviation timeline queries |
+| `fim_deviations`    | `ix_fim_deviations_host_sev_detected` | `(host_id, severity, detected_at DESC)` | Severity-gated deviation filtering |
+| `workspaces`        | `ix_workspaces_owner_status_created` | `(owner_id, status, created_at DESC)` | Analyst workspace dashboard listing |
+| `evidence_annotations` | `ix_evidence_annotations_host_id` | `(host_id)` | Host-scoped annotation searches |
+| `evidence_tag_associations` | `ix_evidence_tag_assoc_host_tag` | `(host_id, tag_id)` | Host-scoped threat actor tag filtering |
 
 ---
 
-## 7. Migration Strategy
+## 6. Forensic Database Views (Phase 2 — Milestone 2.8)
 
-- All schema changes are managed through **Alembic** migrations
-- Each migration has an `upgrade()` and `downgrade()` function
-- Migrations are applied in order and tracked in the `alembic_version` table
-- Migration files are stored in `database/migrations/`
-- No manual DDL changes to the production database
+Five high-performance database views encapsulate complex joins for frontline forensic analysis, supporting both PostgreSQL and SQLite dialects:
+
+### 6.1 `view_active_detections`
+Combines unresolved detections (`open`, `investigating`) with host network metadata and rule provenance for rapid analyst triage:
+```sql
+CREATE VIEW view_active_detections AS
+SELECT
+    d.id AS detection_id, d.rule_id, d.rule_version, d.host_id,
+    d.event_id, d.process_id, d.timestamp, d.severity, d.title,
+    d.description, d.category, d.status, d.notification_status,
+    d.dedup_hash, d.created_at, h.hostname, h.ip_address
+FROM detections d
+JOIN hosts h ON d.host_id = h.id
+WHERE d.status IN ('open', 'investigating');
+```
+
+### 6.2 `view_incident_summary`
+Aggregates incident lifecycle states, analyst assignments, timestamps, and attached evidence counts in a single record:
+```sql
+CREATE VIEW view_incident_summary AS
+SELECT
+    i.id AS incident_id, i.title, i.severity, i.status, i.category,
+    i.host_id, h.hostname, i.created_by_id, i.first_observed_at,
+    i.last_observed_at, i.contained_at, i.closed_at, i.created_at,
+    i.updated_at,
+    COUNT(ie.id) AS evidence_count
+FROM incidents i
+JOIN hosts h ON i.host_id = h.id
+LEFT JOIN incident_evidence ie ON i.id = ie.incident_id
+GROUP BY i.id, i.title, i.severity, i.status, i.category, i.host_id,
+         h.hostname, i.created_by_id, i.first_observed_at,
+         i.last_observed_at, i.contained_at, i.closed_at,
+         i.created_at, i.updated_at;
+```
+
+### 6.3 `view_fim_deviation_details`
+Denormalizes deviations against baseline golden file attributes (expected hashes, permissions, file size) without application-level JOINs:
+```sql
+CREATE VIEW view_fim_deviation_details AS
+SELECT
+    dev.id AS deviation_id, dev.host_id, h.hostname, dev.baseline_id,
+    dev.baseline_file_id, dev.file_path, dev.deviation_type,
+    dev.severity, dev.detected_at, dev.summary,
+    bf.hash_sha256 AS expected_hash_sha256,
+    bf.permissions AS expected_permissions,
+    bf.file_size AS expected_file_size
+FROM fim_deviations dev
+JOIN hosts h ON dev.host_id = h.id
+LEFT JOIN fim_baseline_files bf ON dev.baseline_file_id = bf.id;
+```
+
+### 6.4 `view_process_lineage`
+Reconstructs process execution hierarchy by joining processes with their parents scoped to the same host and execution window:
+```sql
+CREATE VIEW view_process_lineage AS
+SELECT
+    p.id AS process_id, p.host_id, h.hostname, p.pid, p.ppid,
+    p.command, p.executable, p.started_at, p.ended_at,
+    u.uid, u.username,
+    parent.command AS parent_command,
+    parent.executable AS parent_executable
+FROM processes p
+JOIN hosts h ON p.host_id = h.id
+LEFT JOIN linux_users u ON p.linux_user_id = u.id
+LEFT JOIN processes parent ON p.host_id = parent.host_id
+                           AND p.ppid = parent.pid
+                           AND parent.started_at <= p.started_at
+                           AND (parent.ended_at IS NULL OR parent.ended_at >= p.started_at);
+```
+
+### 6.5 `view_session_overview`
+Provides session telemetry enriched with Linux identity, terminal, remote network origins, and duration bounds:
+```sql
+CREATE VIEW view_session_overview AS
+SELECT
+    s.id AS session_id, s.host_id, h.hostname, s.linux_user_id,
+    lu.uid, lu.username, s.session_type, s.terminal, s.remote_host,
+    s.started_at, s.ended_at, s.created_at
+FROM sessions s
+JOIN hosts h ON s.host_id = h.id
+LEFT JOIN linux_users lu ON s.linux_user_id = lu.id;
+```
 
 ---
 
-## 8. Seed and Test Data
+## 7. Database Triggers & Data Integrity (Phase 2 — Milestone 2.8)
 
-- Seed data scripts are stored in `database/seeds/`
-- Seed data provides minimal starting records (e.g., default host, default
-  application user, sample security rules)
-- Test data is generated in test fixtures, not stored in the database permanently
-- No sensitive or realistic credential data in seeds
+Dual-dialect database triggers enforce automated timestamp updates and legal immutability invariants:
+
+### 7.1 Automatic `updated_at` Timestamp Maintenance
+Triggered on `BEFORE UPDATE` across:
+- `hosts`
+- `incidents`
+- `workspaces`
+- `detection_rules`
+- `evidence_annotations`
+
+Implementation:
+- **PostgreSQL:** Uses a shared PL/pgSQL trigger function `trg_fn_set_updated_at()` assigning `NEW.updated_at = CURRENT_TIMESTAMP`.
+- **SQLite:** Uses `CREATE TRIGGER trg_..._updated_at AFTER UPDATE ON ... BEGIN UPDATE ... SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id; END;`.
+
+### 7.2 Immutability Protection Triggers
+Forensic audit and history logs must never be tampered with. Immutability triggers abort any attempt to update or delete records in:
+- `incident_history`
+- `app_audit_log`
+
+Implementation:
+- **PostgreSQL:** PL/pgSQL function `trg_prevent_history_mutation()` / `trg_prevent_audit_mutation()` executed on `BEFORE UPDATE OR DELETE` raising `EXCEPTION '... records are immutable and cannot be modified or deleted.'`.
+- **SQLite:** Dedicated `BEFORE UPDATE` and `BEFORE DELETE` triggers (`trg_..._immutable`, `trg_..._no_delete`) executing `SELECT RAISE(ABORT, '... records are immutable and cannot be deleted.');`.
 
 ---
 
-## 9. Future Considerations
+## 8. Concurrency & Transaction Management (Phase 2 — Milestone 2.8)
 
-These are acknowledged but NOT implemented in the initial architecture:
+### 8.1 Caller-Owned Transaction Boundaries
+- All service methods (`IncidentService`, `FimService`, `WorkspaceService`) adhere to caller-owned transaction boundaries.
+- Rogue internal `.commit()` calls were eliminated; services issue `db.flush()` to generate IDs and enforce database constraints while letting FastAPI route handlers manage commit or rollback.
 
-- **Partitioning:** The `events` table may benefit from time-based partitioning
-  if event volume grows significantly
-- **Archival:** Older events may be moved to archive tables to maintain
-  query performance
-- **Views:** PostgreSQL views will be created in Phase 2 for common
-  investigation queries (e.g., active alerts with event details)
-- **Triggers:** PostgreSQL triggers will be considered in Phase 2 for
-  automatic actions (e.g., updating `updated_at` timestamps, cascading
-  alert status changes)
+### 8.2 Incident Concurrency & Row-Level Locking
+- `IncidentService.get_incident` and `get_incident_or_404` accept `eager_load: bool = True` and `for_update: bool = False`.
+- In mutation paths (`update_incident`, `transition_status`, `escalate_severity`), `eager_load=False, for_update=True` issues `SELECT ... FOR UPDATE`, acquiring an exclusive row lock on PostgreSQL. This eliminates lost updates under concurrent analyst status changes and avoids loading the entire evidence/history ORM tree into memory.
+
+### 8.3 Multi-Source Timeline Query Optimization
+- In `TimelineService` and `EntityCorrelator`, unified union timeline pages hydrate in bounded SQL queries:
+  - Batch prefetching for Linux users (`prefetch_users`) across the page host set.
+  - Batch prefetching for candidate processes (`prefetch_processes`) and PID resolution caching (`_proc_pid_cache`).
+  - Batch prefetching for observed file records (`prefetch_files`) across event `object_path` entries.
+  - Window-based prefetching for candidate sessions (`prefetch_sessions`), snapshots (`prefetch_snapshots`), and resources (`prefetch_resources`) matching the page's `[min_ts, max_ts]` window.
+- This eliminated the classic N+1 query pattern, reducing timeline reconstruction on 50 events from **151 queries down to 10 queries** (>93% reduction in database round-trips).
+
+---
+
+## 9. Performance Benchmark Results
+
+Measured via `scripts/benchmark_db.py` against PostgreSQL and SQLite engines:
+
+| Category | Benchmark / Operation | Scale | Records | Time (ms) | Queries | SLA Threshold | Status |
+|---|---|---|---|---|---|---|---|
+| Forensic Timeline | `Unified Timeline Reconstruction` | medium | 1,000 | 66.20ms | 10 | <500ms | **PASS** |
+| Detections | `Host & Status Filtered Detections` | medium | 150 | 6.79ms | 2 | <200ms | **PASS** |
+| FIM | `FIM Baseline & Deviation Lookups` | medium | 600 | 8.63ms | 4 | <200ms | **PASS** |
+| Incidents | `Incident Transition & Locking` | medium | 50 | 16.60ms | 4 | <200ms | **PASS** |
+| Graph Expansion | `Entity Graph 1-Hop Expansion` | medium | 61 | 5.59ms | 6 | <300ms | **PASS** |
+| Forensic Search | `Multi-Entity Full Search` | medium | 200 | 9.62ms | 4 | <300ms | **PASS** |
+| Database Views | `5 Forensic Views Aggregation` | medium | 850 | 3.48ms | 5 | <250ms | **PASS** |

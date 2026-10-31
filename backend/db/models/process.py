@@ -31,6 +31,9 @@ class Process(Base):
     __tablename__ = "processes"
     __table_args__ = (
         Index("ix_processes_host_pid_started", "host_id", "pid", "started_at"),
+        Index("ix_processes_host_started", "host_id", "started_at"),
+        Index("ix_processes_host_user", "host_id", "linux_user_id"),
+        Index("ix_processes_host_ended", "host_id", "ended_at"),
         CheckConstraint("pid >= 0", name="pid_non_negative"),
     )
 

@@ -95,6 +95,7 @@ def create_baseline(
             include_patterns=payload.include_patterns,
             exclude_patterns=payload.exclude_patterns,
         )
+        db.commit()
     except HostNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -239,6 +240,7 @@ def verify_integrity(
             baseline_id=payload.baseline_id,
             paths=payload.paths,
         )
+        db.commit()
     except HostNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

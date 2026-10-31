@@ -51,6 +51,8 @@ class FimDeviation(Base):
         Index("ix_fim_deviations_severity", "severity"),
         Index("ix_fim_deviations_detected_at", "detected_at"),
         Index("ix_fim_deviations_detection_id", "detection_id"),
+        Index("ix_fim_deviations_host_detected", "host_id", "detected_at"),
+        Index("ix_fim_deviations_host_severity", "host_id", "severity", "detected_at"),
         CheckConstraint(
             "severity IN ('info', 'low', 'medium', 'high', 'critical')",
             name="chk_fim_deviation_severity",

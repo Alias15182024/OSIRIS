@@ -115,11 +115,14 @@ class IncidentService:
         self,
         db: Session,
         incident_id: uuid.UUID,
+        *,
+        eager_load: bool = True,
+        for_update: bool = False,
     ) -> Incident | None:
-        """Retrieve a single incident by ID with fully loaded relationships."""
-        stmt = (
-            select(Incident)
-            .options(
+        """Retrieve a single incident by ID with optional eager loaded relationships and row-level locking."""
+        stmt = select(Incident).where(Incident.id == incident_id)
+        if eager_load:
+            stmt = stmt.options(
                 joinedload(Incident.host),
                 joinedload(Incident.created_by),
                 joinedload(Incident.assigned_to),
@@ -127,17 +130,20 @@ class IncidentService:
                 joinedload(Incident.events).joinedload(IncidentEvent.event),
                 joinedload(Incident.history).joinedload(IncidentHistory.user),
             )
-            .where(Incident.id == incident_id)
-        )
+        if for_update:
+            stmt = stmt.with_for_update()
         return db.execute(stmt).unique().scalar_one_or_none()
 
     def get_incident_or_404(
         self,
         db: Session,
         incident_id: uuid.UUID,
+        *,
+        eager_load: bool = True,
+        for_update: bool = False,
     ) -> Incident:
         """Retrieve incident by ID or raise IncidentNotFoundError."""
-        inc = self.get_incident(db, incident_id)
+        inc = self.get_incident(db, incident_id, eager_load=eager_load, for_update=for_update)
         if inc is None:
             raise IncidentNotFoundError(f"Incident '{incident_id}' not found.")
         return inc
@@ -204,7 +210,7 @@ class IncidentService:
         acting_user_id: Optional[uuid.UUID] = None,
     ) -> Incident:
         """Update incident descriptive attributes and analyst assignment."""
-        incident = self.get_incident_or_404(db, incident_id)
+        incident = self.get_incident_or_404(db, incident_id, eager_load=False, for_update=True)
         now = utcnow()
         changes = []
 
@@ -261,7 +267,7 @@ class IncidentService:
         acting_user_id: Optional[uuid.UUID] = None,
     ) -> Incident:
         """Transition an incident to a new lifecycle state with strict validation."""
-        incident = self.get_incident_or_404(db, incident_id)
+        incident = self.get_incident_or_404(db, incident_id, eager_load=False, for_update=True)
         old_status = incident.status
         target_status = new_status.lower()
 
@@ -332,7 +338,7 @@ class IncidentService:
         acting_user_id: Optional[uuid.UUID] = None,
     ) -> Incident:
         """Change incident severity with strict validation and audit tracking."""
-        incident = self.get_incident_or_404(db, incident_id)
+        incident = self.get_incident_or_404(db, incident_id, eager_load=False, for_update=True)
         old_severity = incident.severity
         sev_norm = new_severity.lower()
 
