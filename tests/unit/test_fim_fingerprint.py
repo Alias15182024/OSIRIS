@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import os
 from pathlib import Path
@@ -217,7 +218,7 @@ class TestCryptographicFingerprinting:
         target.write_text("content", encoding="utf-8")
 
         eloop_err = OSError("Too many levels of symbolic links")
-        eloop_err.errno = 62  # errno.ELOOP
+        eloop_err.errno = errno.ELOOP
 
         with mock.patch("builtins.open", side_effect=eloop_err):
             fp = fingerprint_file(target)

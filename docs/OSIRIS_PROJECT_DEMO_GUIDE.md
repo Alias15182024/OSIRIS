@@ -67,6 +67,38 @@ The interactive OpenAPI documentation and SPA dashboard are available at:
 - **Swagger UI:** `http://127.0.0.1:8000/docs`
 - **Health Check:** `http://127.0.0.1:8000/health`
 
+### 2.3 Cross-Platform Test Verification & Runner
+
+OSIRIS supports cross-platform execution on Linux (Ubuntu 22.04+) and macOS. Python 3.11+ is required.
+
+To run the complete automated test suite (1,300+ unit and integration tests) portably:
+
+```bash
+# Execute full suite via the portable test runner
+python scripts/run_tests.py -v
+
+# Or run specific test modules
+python scripts/run_tests.py tests/unit/test_fim_scanner.py -v
+```
+
+> [!IMPORTANT]
+> **Why `scripts/run_tests.py` is required:**
+> - **FIM Production Exclusions:** The OSIRIS File Integrity Monitoring (FIM) subsystem excludes `/tmp*` and `/var/tmp*` by default as an intentional production security policy to eliminate noise from transient files.
+> - **Pytest Temp Paths on Linux:** Default `pytest` on Ubuntu creates temporary test directories under `/tmp/pytest-of-<user>/`. If run unconfigured, FIM tests that scan test directories are legitimately skipped by production exclusion rules.
+> - **Portable Runner Safety:** `scripts/run_tests.py` generates an isolated temporary directory under `~/.osiris_test_tmp/run_<pid>_<uuid>/`, passes it to pytest via `--basetemp`, and strictly cleans up only that specific directory upon completion.
+>
+> **JavaScript Runtime Requirements:**
+> - Frontend contract tests validate static JavaScript syntax across all views.
+> - On Linux/Ubuntu, install Node.js (`sudo apt install -y nodejs`) to enable syntax checking via `node --check` / `nodejs --check`.
+> - On macOS, Apple JavaScriptCore (`jsc`) is used automatically as a fallback.
+> - If no JavaScript runtime is detected, syntax checks are explicitly skipped with an actionable installation message rather than failing.
+>
+> **PostgreSQL Configuration:**
+> - Unit tests run in-memory via SQLite with foreign keys enforced.
+> - Full PostgreSQL integration tests require `OSIRIS_TEST_DATABASE_URL` (e.g., `postgresql://osiris:password@localhost:5432/osiris_test`).
+>
+> *(Note: Automated test execution verifies codebase portability; live Linux application execution and daemon collector demonstration on Ubuntu remain a separate evaluation step.)*
+
 ---
 
 ## 3. Synthetic Demonstration Data Preparation

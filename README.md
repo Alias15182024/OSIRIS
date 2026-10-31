@@ -102,10 +102,27 @@ python -m database.seeds.seed_phase1
 uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-### 5. Running the Full Test Suite
+### 5. Running the Test Suite (Cross-Platform)
+
 ```bash
-pytest -v
+# Recommended: Run full test suite using the portable runner
+python scripts/run_tests.py -v
+
+# Or run specific test modules
+python scripts/run_tests.py tests/unit/test_fim_scanner.py -v
 ```
+
+> [!NOTE]
+> **Why `scripts/run_tests.py`?**
+> The OSIRIS File Integrity Monitoring (FIM) subsystem intentionally excludes volatile temporary directories (`/tmp*` and `/var/tmp*`) as a core security baseline to prevent alert fatigue. On Linux (including Ubuntu), standard `pytest` creates temporary test directories under `/tmp/pytest-of-<user>/`, which the production scanner correctly excludes.
+>
+> The portable test runner (`scripts/run_tests.py`) allocates an isolated, unique test workspace under `~/.osiris_test_tmp/run_<pid>_<uuid>/`, passes it via `--basetemp`, forwards all arguments to `pytest`, and safely cleans up only its own temporary directory upon exit.
+>
+> **JavaScript Syntax Validation:**
+> Contract tests validate frontend JavaScript syntax using `node --check` (or `nodejs --check` on Debian/Ubuntu), falling back to macOS JavaScriptCore (`jsc`). If no JavaScript runtime is installed, syntax checks are explicitly skipped with an informative installation hint rather than raising unexpected errors. To enable syntax checks on Ubuntu:
+> ```bash
+> sudo apt install -y nodejs
+> ```
 
 ---
 

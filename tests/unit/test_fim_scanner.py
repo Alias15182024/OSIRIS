@@ -8,7 +8,11 @@ import unittest.mock as mock
 
 import pytest
 
-from backend.services.fim.scanner import FimScanner, ScanSummary
+from backend.services.fim.scanner import (
+    DEFAULT_EXCLUDE_PATTERNS,
+    FimScanner,
+    ScanSummary,
+)
 
 
 class TestFimScanner:
@@ -200,3 +204,25 @@ class TestFimScanner:
         assert len(results) == 5
         assert summary.is_complete is False
         assert any("max_files_limit_reached" in err.get("error", "") for err in summary.errors)
+
+    def test_default_excludes_tmp_directory(self) -> None:
+        """Verify DEFAULT_EXCLUDE_PATTERNS correctly excludes /tmp and /var/tmp.
+
+        This is a regression test ensuring the production scanner always
+        excludes temporary directories by default. These exclusions are a
+        security feature — they prevent the FIM scanner from monitoring
+        volatile temporary files in production.
+        """
+        assert "/tmp*" in DEFAULT_EXCLUDE_PATTERNS
+        assert "/var/tmp*" in DEFAULT_EXCLUDE_PATTERNS
+        assert "/proc*" in DEFAULT_EXCLUDE_PATTERNS
+        assert "/sys*" in DEFAULT_EXCLUDE_PATTERNS
+
+        # Verify a default scanner excludes /tmp paths
+        scanner = FimScanner(paths=["/nonexistent"])
+        assert scanner.is_excluded("/tmp") is True
+        assert scanner.is_excluded("/tmp/pytest-of-ubuntu/test0") is True
+        assert scanner.is_excluded("/var/tmp/somefile") is True
+        # Paths outside /tmp must not be excluded by default
+        assert scanner.is_excluded("/home/user/project") is False
+        assert scanner.is_excluded("/opt/osiris/data") is False

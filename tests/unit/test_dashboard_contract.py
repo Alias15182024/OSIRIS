@@ -10,7 +10,7 @@ Verifies:
   - Contains no hardcoded credentials or tokens
   - Does not use localStorage
   - Does not use innerHTML for API-derived values
-- JavaScriptCore syntax validation.
+- JavaScript syntax validation.
 - Operational status of all dashboard API endpoints.
 """
 
@@ -168,22 +168,18 @@ class TestDashboardSourceSecurity:
         """dashboard.js must not use innerHTML to avoid XSS vulnerabilities."""
         assert "innerHTML" not in self.code
 
-    def test_syntax_with_javascriptcore(self) -> None:
-        """dashboard.js must parse cleanly in macOS JavaScriptCore runtime."""
-        jsc_bin = (
-            "/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc"
-        )
-        if not Path(jsc_bin).exists():
-            pytest.skip("JavaScriptCore CLI not available on this system")
+    def test_syntax_with_javascript_runtime(self) -> None:
+        """dashboard.js must parse cleanly in an available JavaScript runtime."""
+        from tests.helpers.js_runtime import find_js_runtime, SKIP_REASON
 
-        result = subprocess.run(
-            [jsc_bin, "-e", f"checkSyntax('{DASHBOARD_JS_PATH}')"],
-            capture_output=True,
-            text=True,
-        )
+        runtime = find_js_runtime()
+        if runtime is None:
+            pytest.skip(SKIP_REASON)
+
+        result = runtime.check_syntax(DASHBOARD_JS_PATH)
         assert (
             result.returncode == 0
-        ), f"jsc syntax check failed:\n{result.stdout}\n{result.stderr}"
+        ), f"JavaScript syntax check failed:\n{result.stdout}\n{result.stderr}"
 
 
 class TestDashboardApiEndpointsOperational:

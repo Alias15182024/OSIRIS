@@ -14,7 +14,7 @@ Verifies:
   - Pagination logic (limit, offset, total) is present
   - Severity badge mapping is present
   - JSON detail rendering via JSON.stringify is present
-- JavaScriptCore syntax validation.
+- JavaScript syntax validation.
 - Backend API operational verification and regression checks.
 """
 
@@ -210,22 +210,18 @@ class TestEventsStaticCodeContract:
         """events.js must use JSON.stringify for safe payload rendering."""
         assert "JSON.stringify" in self.code
 
-    def test_syntax_with_javascriptcore(self) -> None:
-        """events.js must parse cleanly in macOS JavaScriptCore runtime."""
-        jsc_bin = (
-            "/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc"
-        )
-        if not Path(jsc_bin).exists():
-            pytest.skip("JavaScriptCore CLI not available on this system")
+    def test_syntax_with_javascript_runtime(self) -> None:
+        """events.js must parse cleanly in an available JavaScript runtime."""
+        from tests.helpers.js_runtime import find_js_runtime, SKIP_REASON
 
-        result = subprocess.run(
-            [jsc_bin, "-e", f"checkSyntax('{EVENTS_JS_PATH}')"],
-            capture_output=True,
-            text=True,
-        )
+        runtime = find_js_runtime()
+        if runtime is None:
+            pytest.skip(SKIP_REASON)
+
+        result = runtime.check_syntax(EVENTS_JS_PATH)
         assert (
             result.returncode == 0
-        ), f"jsc syntax check failed:\n{result.stdout}\n{result.stderr}"
+        ), f"JavaScript syntax check failed:\n{result.stdout}\n{result.stderr}"
 
 
 class TestEventsApiIntegrationRegression:

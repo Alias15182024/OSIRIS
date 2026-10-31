@@ -16,7 +16,7 @@ Verifies:
   - Zero hardcoded passwords, JWTs, or secrets.
   - Authorization header generation restricted to api.js.
 - API contract coherence: all referenced endpoints and parameters are supported by Phase 1.5.
-- macOS JavaScriptCore syntax checking succeeds across all seven JavaScript files.
+- JavaScript syntax checking succeeds across all seven JavaScript files.
 """
 
 from __future__ import annotations
@@ -313,18 +313,16 @@ class TestPhase16ApiContractCrossCheck:
 
 
 class TestPhase16JavaScriptCoreSyntax:
-    """Verify all seven JavaScript files parse cleanly in JavaScriptCore."""
+    """Verify all seven JavaScript files parse cleanly in an available JavaScript runtime."""
 
     @pytest.mark.parametrize("js_file", JS_FILES, ids=[f.name for f in JS_FILES])
-    def test_javascriptcore_syntax(self, js_file: Path) -> None:
-        """Verify each JavaScript file with macOS JSC runtime."""
-        jsc_bin = "/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc"
-        if not Path(jsc_bin).exists():
-            pytest.skip("JavaScriptCore CLI not available on this system")
+    def test_javascript_syntax(self, js_file: Path) -> None:
+        """Verify each JavaScript file with an available JS runtime."""
+        from tests.helpers.js_runtime import find_js_runtime, SKIP_REASON
 
-        result = subprocess.run(
-            [jsc_bin, "-e", f"checkSyntax('{js_file}')"],
-            capture_output=True,
-            text=True,
-        )
+        runtime = find_js_runtime()
+        if runtime is None:
+            pytest.skip(SKIP_REASON)
+
+        result = runtime.check_syntax(js_file)
         assert result.returncode == 0, f"{js_file.name} syntax error:\n{result.stderr}"

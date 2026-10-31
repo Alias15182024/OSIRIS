@@ -16,7 +16,7 @@ Verifies:
   - Uses real FileResponse fields (id, host_id, path, inode, file_type, first_seen_at, last_seen_at, created_at)
   - Pagination and state boundary logic (limit, offset, total) is present
   - Detail accessibility hooks (Enter, Space, Escape, backdrop click) are present
-- JavaScriptCore syntax validation.
+- JavaScript syntax validation.
 - Backend API operational verification and regression checks.
 """
 
@@ -250,32 +250,27 @@ class TestFilesStaticCodeContract:
         assert "badge-info" in self.code
         assert "badge-warning" in self.code
 
-    def test_syntax_with_javascriptcore(self) -> None:
-        """files.js must parse cleanly in macOS JavaScriptCore runtime."""
-        jsc_bin = (
-            "/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc"
-        )
-        if not Path(jsc_bin).exists():
-            pytest.skip("JavaScriptCore CLI not available on this system")
+    def test_syntax_with_javascript_runtime(self) -> None:
+        """files.js must parse cleanly in an available JavaScript runtime."""
+        from tests.helpers.js_runtime import find_js_runtime, SKIP_REASON
 
-        result = subprocess.run(
-            [jsc_bin, "-e", f"checkSyntax('{FILES_JS_PATH}')"],
-            capture_output=True,
-            text=True,
-        )
+        runtime = find_js_runtime()
+        if runtime is None:
+            pytest.skip(SKIP_REASON)
+
+        result = runtime.check_syntax(FILES_JS_PATH)
         assert (
             result.returncode == 0
-        ), f"jsc syntax check failed:\n{result.stdout}\n{result.stderr}"
+        ), f"JavaScript syntax check failed:\n{result.stdout}\n{result.stderr}"
 
-    def test_badge_formatting_execution_in_javascriptcore(self) -> None:
+    def test_badge_formatting_execution(self) -> None:
         """createFileTypeBadge must format canonical types and legacy aliases in runtime."""
         import re
+        from tests.helpers.js_runtime import find_js_runtime, SKIP_REASON
 
-        jsc_bin = (
-            "/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc"
-        )
-        if not Path(jsc_bin).exists():
-            pytest.skip("JavaScriptCore CLI not available on this system")
+        runtime = find_js_runtime()
+        if runtime is None:
+            pytest.skip(SKIP_REASON)
 
         fn_match = re.search(
             r"function createFileTypeBadge\(.*?\n  \}", self.code, re.DOTALL
@@ -316,9 +311,7 @@ check('unknown_type', 'badge-outline', 'unknown_type');
 check(null, 'badge-outline', '-');
 print('OK');
 """
-        result = subprocess.run(
-            [jsc_bin, "-e", script], capture_output=True, text=True
-        )
+        result = runtime.run_script(script)
         assert (
             result.returncode == 0
         ), f"Execution failed:\n{result.stdout}\n{result.stderr}"

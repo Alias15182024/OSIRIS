@@ -14,7 +14,7 @@ Verifies:
   - Does not use innerHTML for dynamic resource data
   - Native SVG rendering logic (createElementNS, SVG_NS) is present
   - Pagination and state boundary logic (limit, offset, total) is present
-- JavaScriptCore syntax validation.
+- JavaScript syntax validation.
 - Backend API operational verification and regression checks.
 """
 
@@ -221,22 +221,18 @@ class TestResourcesStaticCodeContract:
         assert "total" in self.code
         assert "DEFAULT_LIMIT" in self.code
 
-    def test_syntax_with_javascriptcore(self) -> None:
-        """resources.js must parse cleanly in macOS JavaScriptCore runtime."""
-        jsc_bin = (
-            "/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc"
-        )
-        if not Path(jsc_bin).exists():
-            pytest.skip("JavaScriptCore CLI not available on this system")
+    def test_syntax_with_javascript_runtime(self) -> None:
+        """resources.js must parse cleanly in an available JavaScript runtime."""
+        from tests.helpers.js_runtime import find_js_runtime, SKIP_REASON
 
-        result = subprocess.run(
-            [jsc_bin, "-e", f"checkSyntax('{RESOURCES_JS_PATH}')"],
-            capture_output=True,
-            text=True,
-        )
+        runtime = find_js_runtime()
+        if runtime is None:
+            pytest.skip(SKIP_REASON)
+
+        result = runtime.check_syntax(RESOURCES_JS_PATH)
         assert (
             result.returncode == 0
-        ), f"jsc syntax check failed:\n{result.stdout}\n{result.stderr}"
+        ), f"JavaScript syntax check failed:\n{result.stdout}\n{result.stderr}"
 
 
 class TestResourcesApiIntegrationRegression:

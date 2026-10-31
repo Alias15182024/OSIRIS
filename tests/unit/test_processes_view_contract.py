@@ -15,7 +15,7 @@ Verifies:
   - Does not use innerHTML for dynamic process data
   - Pagination logic (limit, offset, total) is present
   - Detail accessibility hooks (Enter, Space, Escape, backdrop click) are present
-- JavaScriptCore syntax validation.
+- JavaScript syntax validation.
 - Backend API operational verification and regression checks.
 """
 
@@ -210,22 +210,18 @@ class TestProcessesStaticCodeContract:
         assert "Enter" in self.code
         assert "click" in self.code
 
-    def test_syntax_with_javascriptcore(self) -> None:
-        """processes.js must parse cleanly in macOS JavaScriptCore runtime."""
-        jsc_bin = (
-            "/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc"
-        )
-        if not Path(jsc_bin).exists():
-            pytest.skip("JavaScriptCore CLI not available on this system")
+    def test_syntax_with_javascript_runtime(self) -> None:
+        """processes.js must parse cleanly in an available JavaScript runtime."""
+        from tests.helpers.js_runtime import find_js_runtime, SKIP_REASON
 
-        result = subprocess.run(
-            [jsc_bin, "-e", f"checkSyntax('{PROCESSES_JS_PATH}')"],
-            capture_output=True,
-            text=True,
-        )
+        runtime = find_js_runtime()
+        if runtime is None:
+            pytest.skip(SKIP_REASON)
+
+        result = runtime.check_syntax(PROCESSES_JS_PATH)
         assert (
             result.returncode == 0
-        ), f"jsc syntax check failed:\n{result.stdout}\n{result.stderr}"
+        ), f"JavaScript syntax check failed:\n{result.stdout}\n{result.stderr}"
 
 
 class TestProcessesApiIntegrationRegression:

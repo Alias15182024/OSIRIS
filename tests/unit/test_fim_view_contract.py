@@ -160,14 +160,12 @@ class TestFimJsContract:
         assert "openDeviationModal" in self.source
         assert "openBaselineModal" in self.source
 
-    def test_jsc_syntax_validation(self) -> None:
-        jsc_bin = "/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc"
-        if not Path(jsc_bin).exists():
-            pytest.skip("jsc binary not available on this platform")
+    def test_js_syntax_validation(self) -> None:
+        """fim.js must parse without syntax errors on any available runtime."""
+        from tests.helpers.js_runtime import find_js_runtime, SKIP_REASON
 
-        proc = subprocess.run(
-            [jsc_bin, str(FIM_JS_PATH)],
-            capture_output=True,
-            text=True,
-        )
-        assert proc.returncode == 0, f"JSC syntax error: {proc.stderr}"
+        runtime = find_js_runtime()
+        if runtime is None:
+            pytest.skip(SKIP_REASON)
+        result = runtime.check_syntax(FIM_JS_PATH)
+        assert result.returncode == 0, f"JS syntax error: {result.stderr}"

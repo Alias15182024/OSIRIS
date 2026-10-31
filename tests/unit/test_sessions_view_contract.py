@@ -100,11 +100,12 @@ class TestSessionsJsContract:
         assert "loadSessions" in self.source
         assert "openSessionModal" in self.source
 
-    def test_jsc_syntax_validation(self) -> None:
-        jsc_bin = "/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc"
-        proc = subprocess.run(
-            [jsc_bin, str(SESSIONS_JS_PATH)],
-            capture_output=True,
-            text=True,
-        )
-        assert proc.returncode == 0, f"JSC syntax error: {proc.stderr}"
+    def test_js_syntax_validation(self) -> None:
+        """sessions.js must parse without syntax errors on any available runtime."""
+        from tests.helpers.js_runtime import find_js_runtime, SKIP_REASON
+
+        runtime = find_js_runtime()
+        if runtime is None:
+            pytest.skip(SKIP_REASON)
+        result = runtime.check_syntax(SESSIONS_JS_PATH)
+        assert result.returncode == 0, f"JS syntax error: {result.stderr}"
