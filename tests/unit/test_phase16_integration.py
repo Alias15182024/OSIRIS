@@ -25,7 +25,6 @@ from typing import Generator
 from collections import Counter
 from pathlib import Path
 import re
-import subprocess
 
 import pytest
 from sqlalchemy.orm import Session
@@ -318,7 +317,7 @@ class TestPhase16JavaScriptCoreSyntax:
     @pytest.mark.parametrize("js_file", JS_FILES, ids=[f.name for f in JS_FILES])
     def test_javascript_syntax(self, js_file: Path) -> None:
         """Verify each JavaScript file with an available JS runtime."""
-        from tests.helpers.js_runtime import find_js_runtime, SKIP_REASON
+        from tests.helpers.js_runtime import SKIP_REASON, find_js_runtime
 
         runtime = find_js_runtime()
         if runtime is None:

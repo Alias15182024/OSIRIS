@@ -19,7 +19,6 @@ Verifies:
 from __future__ import annotations
 
 from pathlib import Path
-import subprocess
 from typing import Generator
 
 import pytest
@@ -157,7 +156,7 @@ class TestTimelineStaticCodeContract:
 
     def test_js_syntax_validation(self) -> None:
         """Ensure timeline.js syntax parses cleanly in an available JS runtime."""
-        from tests.helpers.js_runtime import find_js_runtime, SKIP_REASON
+        from tests.helpers.js_runtime import SKIP_REASON, find_js_runtime
 
         runtime = find_js_runtime()
         if runtime is None:

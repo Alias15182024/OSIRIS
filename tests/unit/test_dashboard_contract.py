@@ -19,7 +19,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Generator
 import shutil
-import subprocess
 
 import pytest
 from sqlalchemy.orm import Session
@@ -170,7 +169,7 @@ class TestDashboardSourceSecurity:
 
     def test_syntax_with_javascript_runtime(self) -> None:
         """dashboard.js must parse cleanly in an available JavaScript runtime."""
-        from tests.helpers.js_runtime import find_js_runtime, SKIP_REASON
+        from tests.helpers.js_runtime import SKIP_REASON, find_js_runtime
 
         runtime = find_js_runtime()
         if runtime is None:

@@ -28,7 +28,8 @@ _JSC_PATHS = [
 
 SKIP_REASON = (
     "No JavaScript runtime found. Install Node.js (https://nodejs.org/ "
-    "or 'sudo apt install nodejs' on Ubuntu/Debian) or run on macOS with JavaScriptCore."
+    "or 'sudo apt install nodejs' on Ubuntu/Debian) or run on macOS "
+    "with JavaScriptCore."
 )
 
 
@@ -68,7 +69,9 @@ class JsRuntime:
         """
         full_source = js_source
         if self.name in ("node", "nodejs"):
-            polyfill = "if (typeof print === 'undefined') { var print = console.log; }\n"
+            polyfill = (
+                "if (typeof print === 'undefined') { var print = console.log; }\n"
+            )
             full_source = polyfill + js_source
 
         return subprocess.run(

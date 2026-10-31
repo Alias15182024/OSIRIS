@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 from typing import Generator
 import pytest
@@ -162,7 +161,7 @@ class TestFimJsContract:
 
     def test_js_syntax_validation(self) -> None:
         """fim.js must parse without syntax errors on any available runtime."""
-        from tests.helpers.js_runtime import find_js_runtime, SKIP_REASON
+        from tests.helpers.js_runtime import SKIP_REASON, find_js_runtime
 
         runtime = find_js_runtime()
         if runtime is None:

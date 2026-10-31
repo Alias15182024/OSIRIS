@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-import subprocess
 from typing import Generator
 import pytest
 from starlette.testclient import TestClient
@@ -252,7 +251,7 @@ class TestWorkspaceJsContract:
 
     def test_js_syntax_validation(self) -> None:
         """workspace.js must parse without syntax errors on any available runtime."""
-        from tests.helpers.js_runtime import find_js_runtime, SKIP_REASON
+        from tests.helpers.js_runtime import SKIP_REASON, find_js_runtime
 
         runtime = find_js_runtime()
         if runtime is None:

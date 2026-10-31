@@ -22,7 +22,6 @@ from __future__ import annotations
 
 from typing import Generator
 from pathlib import Path
-import subprocess
 import uuid
 
 import pytest
@@ -223,7 +222,7 @@ class TestResourcesStaticCodeContract:
 
     def test_syntax_with_javascript_runtime(self) -> None:
         """resources.js must parse cleanly in an available JavaScript runtime."""
-        from tests.helpers.js_runtime import find_js_runtime, SKIP_REASON
+        from tests.helpers.js_runtime import SKIP_REASON, find_js_runtime
 
         runtime = find_js_runtime()
         if runtime is None:
