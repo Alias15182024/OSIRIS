@@ -47,6 +47,7 @@
         detections: document.getElementById('view-detections'),
         fim: document.getElementById('view-fim'),
         incidents: document.getElementById('view-incidents'),
+        workspace: document.getElementById('view-workspace'),
       },
 
       // Modal elements
@@ -387,6 +388,11 @@
     // Load incidents data when incidents view becomes active
     if (viewName === 'incidents' && window.OsirisIncidents && typeof window.OsirisIncidents.loadIncidents === 'function') {
       window.OsirisIncidents.loadIncidents();
+    }
+
+    // Load workspace data when workspace view becomes active
+    if (viewName === 'workspace' && window.OsirisWorkspace && typeof window.OsirisWorkspace.loadWorkspaces === 'function') {
+      window.OsirisWorkspace.loadWorkspaces();
     }
   }
 

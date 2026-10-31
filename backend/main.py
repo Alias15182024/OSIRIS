@@ -9,18 +9,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from backend.api.routes.annotations import router as annotations_router
 from backend.api.routes.auth import router as auth_router
 from backend.api.routes.detections import router as detections_router
 from backend.api.routes.events import router as events_router
 from backend.api.routes.files import router as files_router
 from backend.api.routes.fim import router as fim_router
+from backend.api.routes.graph import router as graph_router
 from backend.api.routes.incidents import router as incidents_router
 from backend.api.routes.processes import router as processes_router
 from backend.api.routes.resources import router as resources_router
+from backend.api.routes.search import router as search_router
 from backend.api.routes.sessions import router as sessions_router
 from backend.api.routes.snapshots import router as snapshots_router
 from backend.api.routes.status import router as status_router
 from backend.api.routes.timeline import router as timeline_router
+from backend.api.routes.workspaces import router as workspaces_router
 from backend.config import settings
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -79,6 +83,10 @@ app.include_router(incidents_router, prefix="/api/incidents", tags=["incidents"]
 app.include_router(sessions_router, prefix="/api/sessions", tags=["sessions"])
 app.include_router(snapshots_router, prefix="/api/snapshots", tags=["snapshots"])
 app.include_router(timeline_router, prefix="/api/timeline", tags=["timeline"])
+app.include_router(workspaces_router, prefix="/api/workspaces", tags=["workspaces"])
+app.include_router(graph_router, prefix="/api/graph", tags=["graph"])
+app.include_router(search_router, prefix="/api/search", tags=["search"])
+app.include_router(annotations_router, prefix="/api/annotations", tags=["annotations"])
 app.include_router(status_router, prefix="/api", tags=["status"])
 
 

@@ -31,6 +31,10 @@
     FIM_DEVIATIONS: '/api/fim/deviations',
     FIM_VERIFY: '/api/fim/verify',
     INCIDENTS: '/api/incidents',
+    WORKSPACES: '/api/workspaces',
+    GRAPH: '/api/graph',
+    SEARCH: '/api/search',
+    ANNOTATIONS: '/api/annotations',
   });
 
   let authExpiredCallback = null;
@@ -629,6 +633,279 @@
     );
   }
 
+  // ── Workspaces ─────────────────────────────────────────────────────────────
+
+  /**
+   * List workspaces accessible to current user.
+   * @param {Object} [params]
+   * @returns {Promise<Object>} PaginatedWorkspaceResponse
+   */
+  async function getWorkspaces(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.status) qs.set('status', params.status);
+    if (params.host_id) qs.set('host_id', params.host_id);
+    if (params.incident_id) qs.set('incident_id', params.incident_id);
+    if (params.limit !== undefined) qs.set('limit', params.limit);
+    if (params.offset !== undefined) qs.set('offset', params.offset);
+    const query = qs.toString();
+    const url = query ? `${ENDPOINTS.WORKSPACES}?${query}` : ENDPOINTS.WORKSPACES;
+    return await fetchWithAuth(url);
+  }
+
+  /**
+   * Get workspace by ID.
+   * @param {string} workspaceId
+   * @returns {Promise<Object>} WorkspaceResponse
+   */
+  async function getWorkspace(workspaceId) {
+    return await fetchWithAuth(`${ENDPOINTS.WORKSPACES}/${encodeURIComponent(workspaceId)}`);
+  }
+
+  /**
+   * Create an investigation workspace.
+   * @param {Object} payload
+   * @returns {Promise<Object>} WorkspaceResponse
+   */
+  async function createWorkspace(payload = {}) {
+    return await fetchWithAuth(ENDPOINTS.WORKSPACES, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /**
+   * Update workspace details or configuration.
+   * @param {string} workspaceId
+   * @param {Object} payload
+   * @returns {Promise<Object>} WorkspaceResponse
+   */
+  async function updateWorkspace(workspaceId, payload = {}) {
+    return await fetchWithAuth(`${ENDPOINTS.WORKSPACES}/${encodeURIComponent(workspaceId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /**
+   * Archive an investigation workspace.
+   * @param {string} workspaceId
+   * @returns {Promise<Object>} WorkspaceResponse
+   */
+  async function archiveWorkspace(workspaceId) {
+    return await fetchWithAuth(`${ENDPOINTS.WORKSPACES}/${encodeURIComponent(workspaceId)}/archive`, {
+      method: 'POST',
+    });
+  }
+
+  /**
+   * Delete an investigation workspace.
+   * @param {string} workspaceId
+   * @returns {Promise<null>}
+   */
+  async function deleteWorkspace(workspaceId) {
+    return await fetchWithAuth(`${ENDPOINTS.WORKSPACES}/${encodeURIComponent(workspaceId)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // ── Entity Graph ────────────────────────────────────────────────────────────
+
+  /**
+   * Get initial or entity-centric graph.
+   * @param {Object} [params]
+   * @returns {Promise<Object>} GraphDataResponse
+   */
+  async function getGraph(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.host_id) qs.set('host_id', params.host_id);
+    if (params.root_entity_type) qs.set('root_entity_type', params.root_entity_type);
+    if (params.root_entity_id) qs.set('root_entity_id', params.root_entity_id);
+    if (params.depth !== undefined) qs.set('depth', params.depth);
+    if (params.max_nodes !== undefined) qs.set('max_nodes', params.max_nodes);
+    const query = qs.toString();
+    const url = query ? `${ENDPOINTS.GRAPH}?${query}` : ENDPOINTS.GRAPH;
+    return await fetchWithAuth(url);
+  }
+
+  /**
+   * Expand adjacent relationships from a graph node.
+   * @param {Object} payload
+   * @returns {Promise<Object>} GraphDataResponse
+   */
+  async function expandGraph(payload = {}) {
+    return await fetchWithAuth(`${ENDPOINTS.GRAPH}/expand`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /**
+   * Get direct cross-entity pivot records for an entity.
+   * @param {string} entityType
+   * @param {string} entityId
+   * @returns {Promise<Object>} EntityPivotResponse
+   */
+  async function getEntityPivots(entityType, entityId) {
+    return await fetchWithAuth(
+      `${ENDPOINTS.GRAPH}/pivot/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}`
+    );
+  }
+
+  // ── Advanced Search ─────────────────────────────────────────────────────────
+
+  /**
+   * Execute multi-criteria advanced forensic search.
+   * @param {Object} payload SearchFilter
+   * @returns {Promise<Object>} SearchResultResponse
+   */
+  async function searchAdvanced(payload = {}) {
+    return await fetchWithAuth(`${ENDPOINTS.SEARCH}/advanced`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /**
+   * Convenience quick search.
+   * @param {string} query
+   * @param {string} [hostId]
+   * @param {number} [limit=50]
+   * @param {number} [offset=0]
+   * @returns {Promise<Object>} SearchResultResponse
+   */
+  async function quickSearch(query, hostId, limit = 50, offset = 0) {
+    const qs = new URLSearchParams();
+    if (query) qs.set('q', query);
+    if (hostId) qs.set('host_id', hostId);
+    if (limit !== undefined) qs.set('limit', limit);
+    if (offset !== undefined) qs.set('offset', offset);
+    return await fetchWithAuth(`${ENDPOINTS.SEARCH}?${qs.toString()}`);
+  }
+
+  // ── Annotations & Tags ──────────────────────────────────────────────────────
+
+  /**
+   * List available evidence tags.
+   * @param {string} [category]
+   * @returns {Promise<Array>} TagResponse[]
+   */
+  async function getTags(category) {
+    const url = category
+      ? `${ENDPOINTS.ANNOTATIONS}/tags?category=${encodeURIComponent(category)}`
+      : `${ENDPOINTS.ANNOTATIONS}/tags`;
+    return await fetchWithAuth(url);
+  }
+
+  /**
+   * Create a new reusable evidence tag.
+   * @param {Object} payload TagCreateRequest
+   * @returns {Promise<Object>} TagResponse
+   */
+  async function createTag(payload = {}) {
+    return await fetchWithAuth(`${ENDPOINTS.ANNOTATIONS}/tags`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /**
+   * Delete an evidence tag.
+   * @param {string} tagId
+   * @returns {Promise<null>}
+   */
+  async function deleteTag(tagId) {
+    return await fetchWithAuth(`${ENDPOINTS.ANNOTATIONS}/tags/${encodeURIComponent(tagId)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  /**
+   * Update an evidence tag.
+   * @param {string} tagId
+   * @param {Object} payload TagUpdateRequest
+   * @returns {Promise<Object>} TagResponse
+   */
+  async function updateTag(tagId, payload = {}) {
+    return await fetchWithAuth(`${ENDPOINTS.ANNOTATIONS}/tags/${encodeURIComponent(tagId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /**
+   * Attach tag to an evidence item.
+   * @param {Object} payload TagAssociateRequest
+   * @returns {Promise<Object>} TagAssociationResponse
+   */
+  async function associateTag(payload = {}) {
+    return await fetchWithAuth(`${ENDPOINTS.ANNOTATIONS}/tags/associate`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /**
+   * Remove a tag from an evidence item.
+   * @param {Object} payload TagDisassociateRequest
+   * @returns {Promise<Object>}
+   */
+  async function disassociateTag(payload = {}) {
+    return await fetchWithAuth(`${ENDPOINTS.ANNOTATIONS}/tags/disassociate`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /**
+   * Get tags and analyst notes for an evidence item.
+   * @param {string} evidenceType
+   * @param {string} evidenceId
+   * @returns {Promise<Object>} EvidenceAnnotationsResponse
+   */
+  async function getAnnotations(evidenceType, evidenceId) {
+    const qs = new URLSearchParams({
+      evidence_type: evidenceType,
+      evidence_id: evidenceId,
+    });
+    return await fetchWithAuth(`${ENDPOINTS.ANNOTATIONS}?${qs.toString()}`);
+  }
+
+  /**
+   * Add an analyst note to an evidence item.
+   * @param {Object} payload AnnotationNoteCreateRequest
+   * @returns {Promise<Object>} AnnotationNoteResponse
+   */
+  async function createNote(payload = {}) {
+    return await fetchWithAuth(`${ENDPOINTS.ANNOTATIONS}/notes`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /**
+   * Delete an analyst note.
+   * @param {string} noteId
+   * @returns {Promise<null>}
+   */
+  async function deleteNote(noteId) {
+    return await fetchWithAuth(`${ENDPOINTS.ANNOTATIONS}/notes/${encodeURIComponent(noteId)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  /**
+   * Update an analyst note.
+   * @param {string} noteId
+   * @param {Object} payload AnnotationNoteUpdateRequest
+   * @returns {Promise<Object>} AnnotationNoteResponse
+   */
+  async function updateNote(noteId, payload = {}) {
+    return await fetchWithAuth(`${ENDPOINTS.ANNOTATIONS}/notes/${encodeURIComponent(noteId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
   // Export to global namespace
   window.OsirisApi = Object.freeze({
     ENDPOINTS,
@@ -669,6 +946,27 @@
     getIncidentEvents,
     linkIncidentEvent,
     getIncidentReport,
+    getWorkspaces,
+    getWorkspace,
+    createWorkspace,
+    updateWorkspace,
+    archiveWorkspace,
+    deleteWorkspace,
+    getGraph,
+    expandGraph,
+    getEntityPivots,
+    searchAdvanced,
+    quickSearch,
+    getTags,
+    createTag,
+    updateTag,
+    deleteTag,
+    associateTag,
+    disassociateTag,
+    getAnnotations,
+    createNote,
+    updateNote,
+    deleteNote,
   });
 
 })(typeof window !== 'undefined' ? window : this);

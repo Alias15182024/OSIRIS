@@ -318,6 +318,55 @@ _incident_history_table = sa.table(
     sa.column("created_at", sa.DateTime(timezone=True)),
 )
 
+_workspaces_table = sa.table(
+    "workspaces",
+    sa.column("id", sa.Uuid),
+    sa.column("name", sa.String),
+    sa.column("description", sa.String),
+    sa.column("owner_id", sa.Uuid),
+    sa.column("host_id", sa.Uuid),
+    sa.column("incident_id", sa.Uuid),
+    sa.column("status", sa.String),
+    sa.column("configuration", sa.JSON),
+    sa.column("created_at", sa.DateTime(timezone=True)),
+    sa.column("updated_at", sa.DateTime(timezone=True)),
+)
+
+_evidence_tags_table = sa.table(
+    "evidence_tags",
+    sa.column("id", sa.Uuid),
+    sa.column("name", sa.String),
+    sa.column("description", sa.String),
+    sa.column("color", sa.String),
+    sa.column("category", sa.String),
+    sa.column("created_by_id", sa.Uuid),
+    sa.column("created_at", sa.DateTime(timezone=True)),
+)
+
+_evidence_tag_associations_table = sa.table(
+    "evidence_tag_associations",
+    sa.column("id", sa.Uuid),
+    sa.column("tag_id", sa.Uuid),
+    sa.column("evidence_type", sa.String),
+    sa.column("evidence_id", sa.String),
+    sa.column("host_id", sa.Uuid),
+    sa.column("created_by_id", sa.Uuid),
+    sa.column("created_at", sa.DateTime(timezone=True)),
+)
+
+_evidence_annotations_table = sa.table(
+    "evidence_annotations",
+    sa.column("id", sa.Uuid),
+    sa.column("evidence_type", sa.String),
+    sa.column("evidence_id", sa.String),
+    sa.column("host_id", sa.Uuid),
+    sa.column("workspace_id", sa.Uuid),
+    sa.column("author_id", sa.Uuid),
+    sa.column("annotation_text", sa.Text),
+    sa.column("created_at", sa.DateTime(timezone=True)),
+    sa.column("updated_at", sa.DateTime(timezone=True)),
+)
+
 
 def _populate_test_files(engine: sa.Engine, host_id: uuid.UUID) -> dict[str, uuid.UUID]:
     """Insert test records with legacy, canonical, and edge-case file_types."""
@@ -1800,5 +1849,229 @@ class TestIncidentMigrationPostgreSQL:
         # Re-upgrade to 0006
         command.upgrade(alembic_cfg, "0006_incidents_and_evidence")
         assert _get_current_revision(engine) == "0006_incidents_and_evidence"
+
+        engine.dispose()
+
+
+class TestWorkspaceMigrationSQLite:
+    """Test 0007_workspaces_and_annotations against an isolated temporary SQLite database."""
+
+    def test_upgrade_and_downgrade_workspaces_sqlite(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        db_file = tmp_path / "test_mig_0007.db"
+        sqlite_url = f"sqlite:///{db_file}"
+
+        monkeypatch.setenv("OSIRIS_DATABASE_URL", sqlite_url)
+        monkeypatch.setattr(settings, "database_url", sqlite_url)
+
+        alembic_cfg = Config("alembic.ini")
+        alembic_cfg.set_main_option("sqlalchemy.url", sqlite_url)
+
+        # 1. Upgrade through 0006
+        command.upgrade(alembic_cfg, "0006_incidents_and_evidence")
+        engine = sa.create_engine(sqlite_url)
+        assert _get_current_revision(engine) == "0006_incidents_and_evidence"
+
+        # 2. Upgrade to 0007_workspaces_and_annotations
+        command.upgrade(alembic_cfg, "0007_workspaces_and_annotations")
+        assert _get_current_revision(engine) == "0007_workspaces_and_annotations"
+
+        # 3. Verify tables exist
+        inspector = sa.inspect(engine)
+        tables = set(inspector.get_table_names())
+        assert "workspaces" in tables
+        assert "evidence_tags" in tables
+        assert "evidence_tag_associations" in tables
+        assert "evidence_annotations" in tables
+
+        # 4. Insert records across all 4 tables
+        now = _utcnow()
+        host_id = uuid.uuid4()
+        user_id = uuid.uuid4()
+        incident_id = uuid.uuid4()
+        workspace_id = uuid.uuid4()
+        tag_id = uuid.uuid4()
+        assoc_id = uuid.uuid4()
+        annotation_id = uuid.uuid4()
+
+        with engine.begin() as conn:
+            conn.execute(
+                _hosts_table.insert().values(
+                    id=host_id,
+                    hostname="test-ws-host",
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                _incidents_table.insert().values(
+                    id=incident_id,
+                    title="Investigation Incident",
+                    description="Incident for workspace testing",
+                    severity="high",
+                    status="open",
+                    category="malware",
+                    host_id=host_id,
+                    created_by_id=None,
+                    assigned_to_id=None,
+                    first_observed_at=now,
+                    last_observed_at=now,
+                    contained_at=None,
+                    containment_summary=None,
+                    resolved_at=None,
+                    resolution_summary=None,
+                    closed_at=None,
+                    closure_summary=None,
+                    created_at=now,
+                    updated_at=None,
+                )
+            )
+            conn.execute(
+                _workspaces_table.insert().values(
+                    id=workspace_id,
+                    name="Forensic Analysis Workspace",
+                    description="Workspace for host intrusion investigation",
+                    owner_id=None,
+                    host_id=host_id,
+                    incident_id=incident_id,
+                    status="active",
+                    configuration={
+                        "active_panels": ["overview", "graph", "timeline"],
+                        "layout_preferences": {"sidebar_open": True},
+                        "selected_entities": [],
+                        "pinned_evidence": [],
+                    },
+                    created_at=now,
+                    updated_at=None,
+                )
+            )
+            conn.execute(
+                _evidence_tags_table.insert().values(
+                    id=tag_id,
+                    name="threat-actor-apt",
+                    description="Associated with APT threat group",
+                    color="#e06c75",
+                    category="threat_intel",
+                    created_by_id=None,
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                _evidence_tag_associations_table.insert().values(
+                    id=assoc_id,
+                    tag_id=tag_id,
+                    evidence_type="incident",
+                    evidence_id=str(incident_id),
+                    host_id=host_id,
+                    created_by_id=None,
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                _evidence_annotations_table.insert().values(
+                    id=annotation_id,
+                    evidence_type="incident",
+                    evidence_id=str(incident_id),
+                    host_id=host_id,
+                    workspace_id=workspace_id,
+                    author_id=None,
+                    annotation_text="Identified credential dumping indicator",
+                    created_at=now,
+                    updated_at=None,
+                )
+            )
+
+        with engine.connect() as conn:
+            ws_row = conn.execute(
+                sa.select(_workspaces_table).where(_workspaces_table.c.id == workspace_id)
+            ).one()
+            assert ws_row.name == "Forensic Analysis Workspace"
+            assert ws_row.status == "active"
+            assert ws_row.configuration["active_panels"] == ["overview", "graph", "timeline"]
+
+            tag_row = conn.execute(
+                sa.select(_evidence_tags_table).where(_evidence_tags_table.c.id == tag_id)
+            ).one()
+            assert tag_row.name == "threat-actor-apt"
+            assert tag_row.color == "#e06c75"
+
+            assoc_row = conn.execute(
+                sa.select(_evidence_tag_associations_table).where(_evidence_tag_associations_table.c.id == assoc_id)
+            ).one()
+            assert assoc_row.evidence_type == "incident"
+            assert assoc_row.evidence_id == str(incident_id)
+
+            annot_row = conn.execute(
+                sa.select(_evidence_annotations_table).where(_evidence_annotations_table.c.id == annotation_id)
+            ).one()
+            assert annot_row.annotation_text == "Identified credential dumping indicator"
+
+        # 5. Downgrade back to 0006_incidents_and_evidence
+        command.downgrade(alembic_cfg, "0006_incidents_and_evidence")
+        assert _get_current_revision(engine) == "0006_incidents_and_evidence"
+
+        inspector = sa.inspect(engine)
+        down_tables = set(inspector.get_table_names())
+        assert "workspaces" not in down_tables
+        assert "evidence_tags" not in down_tables
+        assert "evidence_tag_associations" not in down_tables
+        assert "evidence_annotations" not in down_tables
+
+        # 6. Re-upgrade to 0007_workspaces_and_annotations is idempotent
+        command.upgrade(alembic_cfg, "0007_workspaces_and_annotations")
+        assert _get_current_revision(engine) == "0007_workspaces_and_annotations"
+
+        inspector = sa.inspect(engine)
+        reup_tables = set(inspector.get_table_names())
+        assert "workspaces" in reup_tables
+        assert "evidence_tags" in reup_tables
+        assert "evidence_tag_associations" in reup_tables
+        assert "evidence_annotations" in reup_tables
+
+        engine.dispose()
+
+
+class TestWorkspaceMigrationPostgreSQL:
+    """Test 0007_workspaces_and_annotations against an isolated disposable PostgreSQL database."""
+
+    def test_upgrade_and_downgrade_workspaces_postgres(
+        self, disposable_pg_url: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("OSIRIS_DATABASE_URL", disposable_pg_url)
+        monkeypatch.setattr(settings, "database_url", disposable_pg_url)
+
+        alembic_cfg = Config("alembic.ini")
+        alembic_cfg.set_main_option("sqlalchemy.url", disposable_pg_url)
+
+        # 1. Upgrade through 0006
+        command.upgrade(alembic_cfg, "0006_incidents_and_evidence")
+        engine = sa.create_engine(disposable_pg_url)
+        assert _get_current_revision(engine) == "0006_incidents_and_evidence"
+
+        # 2. Upgrade to 0007
+        command.upgrade(alembic_cfg, "0007_workspaces_and_annotations")
+        assert _get_current_revision(engine) == "0007_workspaces_and_annotations"
+
+        inspector = sa.inspect(engine)
+        tables = set(inspector.get_table_names())
+        assert "workspaces" in tables
+        assert "evidence_tags" in tables
+        assert "evidence_tag_associations" in tables
+        assert "evidence_annotations" in tables
+
+        # Downgrade back to 0006
+        command.downgrade(alembic_cfg, "0006_incidents_and_evidence")
+        assert _get_current_revision(engine) == "0006_incidents_and_evidence"
+
+        inspector = sa.inspect(engine)
+        down_tables = set(inspector.get_table_names())
+        assert "workspaces" not in down_tables
+        assert "evidence_tags" not in down_tables
+        assert "evidence_tag_associations" not in down_tables
+        assert "evidence_annotations" not in down_tables
+
+        # Re-upgrade to 0007
+        command.upgrade(alembic_cfg, "0007_workspaces_and_annotations")
+        assert _get_current_revision(engine) == "0007_workspaces_and_annotations"
 
         engine.dispose()

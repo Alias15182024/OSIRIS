@@ -265,6 +265,10 @@ class TestPhase16ApiContractCrossCheck:
             "/api/detections",
             "/api/fim",
             "/api/incidents",
+            "/api/workspaces",
+            "/api/graph",
+            "/api/search",
+            "/api/annotations",
         ]
         for js_file in JS_FILES:
             code = js_file.read_text(encoding="utf-8")

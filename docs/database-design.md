@@ -577,7 +577,7 @@ app_users
 └── updated_at      TIMESTAMPTZ
 ```
 
-### 3.16 Application Audit Log
+### 3.17 Application Audit Log
 
 ```
 app_audit_log
@@ -592,6 +592,83 @@ app_audit_log
 INDEX (user_id)
 INDEX (action)
 INDEX (created_at)
+```
+
+### 3.18 Workspace (Phase 2 — Milestone 2.7)
+
+```
+workspaces
+├── id              UUID         PRIMARY KEY
+├── name            VARCHAR(255) NOT NULL
+├── description     TEXT         NULLABLE
+├── owner_id        UUID         NOT NULL FK → app_users.id (ON DELETE CASCADE)
+├── host_id         UUID         NULLABLE FK → hosts.id (ON DELETE SET NULL)
+├── incident_id     UUID         NULLABLE FK → incidents.id (ON DELETE SET NULL)
+├── status          VARCHAR(50)  NOT NULL DEFAULT 'active'
+├── is_shared       BOOLEAN      NOT NULL DEFAULT FALSE
+├── configuration   JSON / JSONB NOT NULL DEFAULT '{}'
+├── created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+└── updated_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+
+INDEX ix_workspaces_owner (owner_id)
+INDEX ix_workspaces_host (host_id)
+INDEX ix_workspaces_incident (incident_id)
+INDEX ix_workspaces_status (status)
+CHECK chk_workspace_status (status IN ('active', 'archived', 'closed'))
+```
+
+### 3.19 Evidence Tag (Phase 2 — Milestone 2.7)
+
+```
+evidence_tags
+├── id              UUID         PRIMARY KEY
+├── name            VARCHAR(100) NOT NULL UNIQUE
+├── description     TEXT         NULLABLE
+├── color           VARCHAR(20)  NOT NULL DEFAULT '#ef4444'
+├── category        VARCHAR(50)  NOT NULL DEFAULT 'general'
+├── created_by_id   UUID         NULLABLE FK → app_users.id (ON DELETE SET NULL)
+└── created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+
+INDEX ix_evidence_tags_name (name) UNIQUE
+INDEX ix_evidence_tags_category (category)
+```
+
+### 3.20 Evidence Tag Association (Phase 2 — Milestone 2.7)
+
+```
+evidence_tag_associations
+├── id              UUID         PRIMARY KEY
+├── tag_id          UUID         NOT NULL FK → evidence_tags.id (ON DELETE CASCADE)
+├── evidence_type   VARCHAR(50)  NOT NULL
+├── evidence_id     VARCHAR(128) NOT NULL
+├── host_id         UUID         NULLABLE FK → hosts.id (ON DELETE CASCADE)
+├── created_by_id   UUID         NULLABLE FK → app_users.id (ON DELETE SET NULL)
+└── created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+
+INDEX ix_evidence_tag_assoc_lookup (evidence_type, evidence_id)
+INDEX ix_evidence_tag_assoc_tag (tag_id)
+INDEX ix_evidence_tag_assoc_host (host_id)
+UNIQUE uq_evidence_tag_assoc (tag_id, evidence_type, evidence_id)
+```
+
+### 3.21 Evidence Annotation (Phase 2 — Milestone 2.7)
+
+```
+evidence_annotations
+├── id              UUID         PRIMARY KEY
+├── evidence_type   VARCHAR(50)  NOT NULL
+├── evidence_id     VARCHAR(128) NOT NULL
+├── host_id         UUID         NULLABLE FK → hosts.id (ON DELETE CASCADE)
+├── workspace_id    UUID         NULLABLE FK → workspaces.id (ON DELETE SET NULL)
+├── author_id       UUID         NOT NULL FK → app_users.id (ON DELETE CASCADE)
+├── annotation_text TEXT         NOT NULL
+├── created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+└── updated_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+
+INDEX ix_evidence_annotations_lookup (evidence_type, evidence_id)
+INDEX ix_evidence_annotations_author (author_id)
+INDEX ix_evidence_annotations_workspace (workspace_id)
+INDEX ix_evidence_annotations_host (host_id)
 ```
 
 ---

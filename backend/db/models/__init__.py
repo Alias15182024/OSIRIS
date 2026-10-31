@@ -22,6 +22,10 @@ from backend.db.models.process import Process
 from backend.db.models.resource_snapshot import ResourceSnapshot
 from backend.db.models.snapshot import Snapshot
 from backend.db.models.user_session import UserSession
+from backend.db.models.workspace import Workspace
+from backend.db.models.evidence_tag import EvidenceTag
+from backend.db.models.evidence_tag_association import EvidenceTagAssociation
+from backend.db.models.evidence_annotation import EvidenceAnnotation
 
 __all__ = [
     "AppAuditLog",
@@ -29,6 +33,9 @@ __all__ = [
     "Detection",
     "DetectionRule",
     "Event",
+    "EvidenceAnnotation",
+    "EvidenceTag",
+    "EvidenceTagAssociation",
     "File",
     "FimBaseline",
     "FimBaselineFile",
@@ -43,4 +50,5 @@ __all__ = [
     "ResourceSnapshot",
     "Snapshot",
     "UserSession",
+    "Workspace",
 ]

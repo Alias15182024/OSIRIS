@@ -868,3 +868,102 @@ All Milestone 2.6 components have been implemented, verified through automated u
 - **`tests/unit/test_incidents_view_contract.py` (9 passed)**: Static JavaScript delivery, HTML element existence, zero `localStorage`, zero `innerHTML`, zero `eval`, zero hardcoded secrets, and Apple JavaScriptCore syntax execution.
 - **`tests/unit/test_migrations.py` (13 passed)**: Reversible migration upgrade and downgrade for `0006_incidents_and_evidence` on both SQLite and PostgreSQL.
 
+---
+
+# Phase 2 — Milestone 2.7: Investigation Workspace & Advanced Analytics
+
+## 1. Architecture & Implementation Summary
+
+### 1.1 Database Schema & Migration
+- **Migration (`database/migrations/versions/0007_workspaces_and_annotations.py`)**:
+  - `workspaces`: Persistent analyst investigation sessions with JSON/JSONB layout configuration (`configuration`), ownership tracking (`owner_id`), optional host scoping (`host_id`), linked incident scoping (`incident_id`), and lifecycle status (`active`, `archived`, `closed`).
+  - `evidence_tags`: Reusable categorization tags with unique naming, custom color codes, and categories.
+  - `evidence_tag_associations`: Polymorphic many-to-many relationship attaching tags across all forensic evidence types (`process`, `event`, `session`, `detection`, `fim_deviation`, `file`, `incident`, `host`, `snapshot`) with host scoping and creator attribution.
+  - `evidence_annotations`: Freeform analyst investigation notes with creator attribution (`author_id`), optional workspace association (`workspace_id`), and host scoping.
+- **Reversibility**: Dual-dialect support for PostgreSQL and SQLite with fully reversible `upgrade()` and `downgrade()` cycles.
+
+### 1.2 Persistent Workspace Service
+- **Service (`backend/services/workspace/service.py`)**:
+  - Full CRUD lifecycle for analyst workspaces with paginated listing, privacy isolation (private workspaces visible only to owners and admins), and configuration preservation.
+  - Enforces strict host isolation: linking an incident from Host B into a workspace scoped to Host A raises `HostIsolationError`.
+
+### 1.3 Polymorphic Evidence Tagging & Annotations
+- **Service (`backend/services/workspace/annotations.py`)**:
+  - Manages reusable evidence tags and enforces deduplication (`TagDuplicateError`).
+  - Polymorphic association linking tags to any forensic entity with host scoping.
+  - Analyst investigation notes with author attribution and timestamps.
+  - Non-destructive design: source telemetry and detection records remain immutable.
+
+### 1.4 Interactive Forensic Entity Relationship Graph
+- **Service (`backend/services/workspace/graph.py`)**:
+  - Multi-entity graph model connecting 10 entity types: `host`, `process`, `user`, `session`, `event`, `snapshot`, `detection`, `fim_deviation`, `file`, and `incident`.
+  - Directed edges capturing process hierarchies (`spawned`), user ownership (`owned_by`), session ties (`executed_in`), event generation (`generated`), alerts (`alerted_on`), file integrity deviations (`deviated_from`), and incident evidence (`evidence_of`).
+  - Strict bounded expansion: limits traversal depth (default 1, max 3) and node count (default 50, max 150) to prevent denial of service and visual clutter.
+  - Relationship provenance tracking in edge metadata (`source_table`, `source_column`).
+  - Direct cross-entity pivoting (`get_entity_pivots`) for contextual navigation.
+
+### 1.5 Structured Advanced Forensic Search
+- **Service (`backend/services/workspace/search.py`)**:
+  - Multi-criteria structured search across events, processes, sessions, detections, FIM deviations, files, and incidents.
+  - Supports full-text substring queries, command prefix filters, object path patterns, severity levels, temporal windows, and tag filters.
+  - Flexible logic combining filters with configurable `AND` or `OR` evaluation.
+  - Host boundary isolation: queries scoped to a host strictly filter across all subsystems.
+  - Deterministic pagination and descending timestamp sorting.
+
+### 1.6 RESTful API Endpoints
+- **Workspaces (`backend/api/routes/workspaces.py`)**:
+  - `POST /api/workspaces`: Create investigation workspace (restricted to `admin`, `analyst`).
+  - `GET /api/workspaces`: Paginated workspace listing with privacy isolation.
+  - `GET /api/workspaces/{id}`: Detailed workspace configuration retrieval.
+  - `PATCH /api/workspaces/{id}`: Metadata and configuration persistence.
+  - `POST /api/workspaces/{id}/archive`: Workspace archiving.
+  - `DELETE /api/workspaces/{id}`: Permanent deletion with authorization check.
+- **Entity Graph (`backend/api/routes/graph.py`)**:
+  - `GET /api/graph`: Host-centric or entity-centric initial subgraph retrieval.
+  - `POST /api/graph/expand`: Bounded neighbor relationship expansion.
+  - `GET /api/graph/pivot/{type}/{id}`: Direct cross-entity navigation pivots.
+- **Advanced Search (`backend/api/routes/search.py`)**:
+  - `POST /api/search/advanced`: Multi-criteria structured forensic search.
+  - `GET /api/search`: Quick query search across forensic entities.
+- **Annotations (`backend/api/routes/annotations.py`)**:
+  - `GET` & `POST /api/annotations/tags`: Evidence tag listing and creation.
+  - `PATCH /api/annotations/tags/{id}`: Evidence tag metadata and color update.
+  - `DELETE /api/annotations/tags/{id}`: Evidence tag deletion with cascade.
+  - `POST /api/annotations/tags/associate`: Attach tag to forensic evidence item.
+  - `POST /api/annotations/tags/disassociate`: Detach tag from evidence item.
+  - `GET /api/annotations`: Fetch active tags and notes for an evidence item.
+  - `POST /api/annotations/notes`: Create analyst note.
+  - `PATCH /api/annotations/notes/{id}`: Update analyst note with author/admin verification.
+  - `DELETE /api/annotations/notes/{id}`: Delete analyst note with author verification.
+
+### 1.7 Frontend Investigation Workspace View
+- **Single-Page Application View (`frontend/static/js/views/workspace.js`)**:
+  - Workspace switcher, rename modal dialog, and configuration persistence (active tab, search criteria, zoom level, pinned evidence).
+  - Five investigation sub-panels: Overview, Unified Investigation Workbench, Entity Graph Explorer, Advanced Search, and Evidence & Notes.
+  - Unified investigation grid displaying live correlated telemetry across timeline, processes, user sessions, detection alerts, FIM deviations, and incident records with responsive grid, stacked, and single layouts.
+  - Native SVG interactive entity graph rendering with zoom, pan, radial layout, severity rings, and slide-out node inspector drawer with adjacent pivots.
+  - Advanced forensic search form with multi-entity checkboxes, AND/OR logic, tag filter, and tabular results with "Pivot in Graph", "Pin", "Tag", and "Note" action buttons.
+  - Evidence & Notes panel with pinned cards and tag manager.
+  - Strict security adherence: zero `innerHTML`, zero `localStorage`, zero `eval()`. Verified with Apple JavaScriptCore.
+
+---
+
+## 2. Milestone 2.7 Verification Results
+
+### 2.1 Workspace Pytest Suite
+- **1,291 passed, 12 skipped, 64 warnings** across all test suites in the workspace.
+
+### 2.2 Milestone 2.7 Targeted Test Suites (88 passed)
+- **`tests/unit/test_migrations.py` (15 passed)**: Reversible upgrade and downgrade migrations for `0007_workspaces_and_annotations` on SQLite and PostgreSQL.
+- **`tests/unit/test_workspace_service.py` (8 passed)**: Workspace creation, auto-host derivation from incidents, cross-host incident rejection, privacy isolation between analysts, permissions enforcement on private and unowned workspaces, metadata updates, and deletion.
+- **`tests/unit/test_evidence_annotations.py` (8 passed)**: Tag lifecycle, tag metadata updates and duplication rejection, unique constraint and concurrent integrity enforcement, polymorphic tag association, analyst notes lifecycle and edits, permissions on authored and unauthored notes, and source record immutability.
+- **`tests/unit/test_entity_graph.py` (10 passed)**: Initial host graph generation, process hierarchy and event traversal, FIM deviation and detection expansion, incident evidence expansion, snapshot expansion, cross-host isolation, bounded expansion limits, PID reuse protection on process parent/child traversal, dangling edge pruning on max node boundaries, and entity pivoting API.
+- **`tests/unit/test_advanced_search.py` (11 passed)**: Query text search, tag filtering, command/severity filters, snapshot search, file path search, host boundary isolation under both AND and OR evaluation, time windowing, deterministic pagination and sorting, and empty/nonexistent tag search safety.
+- **`tests/unit/test_api_workspaces.py` (8 passed)**: Authentication enforcement (401), RBAC (403 for viewers), CRUD lifecycle, incident host auto-derivation, host isolation validation (400), and privacy isolation.
+- **`tests/unit/test_api_graph.py` (5 passed)**: Unauthenticated rejection (401), initial host graph retrieval, node expansion, snapshot expansion, and entity pivots.
+- **`tests/unit/test_api_search.py` (4 passed)**: Unauthenticated rejection (401), quick search, multi-criteria advanced search, and snapshot filtering.
+- **`tests/unit/test_api_annotations.py` (9 passed)**: Unauthenticated rejection (401), RBAC (403 for viewers on create and update), tag creation, update and listing, polymorphic association and queries, and analyst notes CRUD lifecycle.
+- **`tests/unit/test_workspace_view_contract.py` (10 passed)**: Static JavaScript delivery, HTML element existence, unified view layout verification, zero `localStorage`, zero `innerHTML`, zero `eval`, zero hardcoded secrets, and Apple JavaScriptCore syntax execution.
+
+
+

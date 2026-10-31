@@ -1251,3 +1251,213 @@ html, body {
   border-color: #ec4899;
   color: #fbcfe8;
 }
+
+/* ── Milestone 2.7 Investigation Workspace Styles ────────────────────────── */
+
+.workspace-header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md, 1rem);
+  flex-wrap: wrap;
+}
+
+.workspace-select-wrapper {
+  min-width: 220px;
+}
+
+.sub-nav-tabs {
+  display: flex;
+  gap: var(--space-xs, 0.5rem);
+  border-bottom: 1px solid var(--color-border, #334155);
+  padding-bottom: 2px;
+}
+
+.ws-tab-btn {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--color-text-secondary, #94a3b8);
+  font-size: var(--font-sm, 0.875rem);
+  font-weight: 500;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+
+.ws-tab-btn:hover {
+  color: var(--color-text-primary, #f8fafc);
+}
+
+.ws-tab-btn.active {
+  color: var(--color-primary, #38bdf8);
+  border-bottom-color: var(--color-primary, #38bdf8);
+}
+
+.ws-subpanel {
+  animation: fadeIn 0.15s ease-in-out;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-sm, 0.75rem);
+}
+
+.stat-card-mini {
+  background: var(--color-bg-elevated, #1e293b);
+  border: 1px solid var(--color-border, #334155);
+  border-radius: var(--radius-sm, 4px);
+  padding: 0.75rem;
+  text-align: center;
+}
+
+.stat-card-mini .stat-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--color-text-secondary, #94a3b8);
+  text-transform: uppercase;
+  margin-bottom: 0.25rem;
+}
+
+.stat-card-mini .stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-text-primary, #f8fafc);
+}
+
+.graph-viewport-wrapper {
+  position: relative;
+  background-color: #0b1120;
+  border: 1px solid var(--color-border, #334155);
+  border-radius: var(--radius-md, 6px);
+  overflow: hidden;
+  min-height: 600px;
+}
+
+.graph-svg {
+  display: block;
+  width: 100%;
+  height: 600px;
+  cursor: grab;
+}
+
+.graph-svg:active {
+  cursor: grabbing;
+}
+
+.graph-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 340px;
+  height: 100%;
+  background: #1e293b;
+  border-left: 1px solid var(--color-border, #334155);
+  padding: 1rem;
+  overflow-y: auto;
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.4);
+  z-index: 10;
+}
+
+.drawer-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text-primary, #f8fafc);
+  margin: 0;
+}
+
+.drawer-properties {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.drawer-prop-row {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 0.25rem;
+}
+
+.drawer-prop-label {
+  color: var(--color-text-secondary, #94a3b8);
+  font-size: 0.75rem;
+}
+
+.drawer-prop-val {
+  color: var(--color-text-primary, #f8fafc);
+  word-break: break-all;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #ffffff;
+  margin-right: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.tag-delete-btn {
+  background: rgba(0, 0, 0, 0.2);
+  border: none;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  line-height: 14px;
+  color: #ffffff;
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tag-delete-btn:hover {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.unified-panels-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+  gap: 1rem;
+}
+
+.unified-panels-grid.layout-stacked {
+  grid-template-columns: 1fr;
+}
+
+.unified-panels-grid.layout-single {
+  grid-template-columns: 1fr;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.unified-card {
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+}
+
+.unified-card .panel-card-content {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.btn-xs {
+  padding: 0.15rem 0.4rem;
+  font-size: 0.75rem;
+  line-height: 1;
+}
+

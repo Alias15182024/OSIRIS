@@ -435,19 +435,39 @@ the Event Processing Layer (Milestone 1.3).
 
 ---
 
-### Milestone 2.7 — Investigation Interface
+### Milestone 2.7 — Investigation Interface (Completed)
 
-**Goal:** Provide a comprehensive investigation UI.
+**Goal:** Provide a comprehensive forensic investigation workspace and advanced analytics interface.
 
-- [ ] Investigation dashboard (active incidents, alert overview)
-- [ ] Incident detail view (timeline, alerts, evidence)
-- [ ] Alert detail view (rule explanation, triggering event)
-- [ ] Timeline explorer with entity filtering
-- [ ] Evidence viewer
+- [x] Database schema & migration `0007_workspaces_and_annotations.py` supporting SQLite & PostgreSQL with reversible migrations (`workspaces`, `evidence_tags`, `evidence_tag_associations`, `evidence_annotations`)
+- [x] Persistent investigation workspaces with customizable layout configuration, filter preservation, and host isolation (`WorkspaceService`)
+- [x] Reusable evidence tagging and polymorphic attribution-tracked analyst notes (`AnnotationService`)
+- [x] Interactive SVG entity relationship graph with bounded neighborhood expansion and cross-entity pivoting (`EntityGraphService`)
+- [x] Multi-criteria structured forensic search across repositories with AND/OR logic and tag filtering (`AdvancedSearchService`)
+- [x] RESTful API endpoints: `/api/workspaces`, `/api/graph`, `/api/search`, `/api/annotations` with full RBAC authentication
+- [x] Single-Page Application (SPA) frontend controller (`frontend/static/js/views/workspace.js`), unified DOM markup in `index.html`, and CSS styles
+- [x] Zero `innerHTML`, zero `localStorage`, zero `eval()` security compliance verified via contract tests and JavaScriptCore
 
 **Testing Checkpoint:**
-- Investigation workflow is complete and functional
-- All relevant data is accessible from the investigation interface
+- Investigation workspace persists active tabs, filters, and pinned evidence across sessions
+- Interactive entity graph renders nodes and directed edges with bounded traversal limits
+- Multi-criteria forensic search executes across events, processes, sessions, detections, FIM deviations, files, and incidents
+- Reversible Alembic migrations pass cleanly on SQLite and PostgreSQL
+- All unit, API, contract, and syntax tests pass with zero regressions
+
+**Milestone 2.7 Validation Evidence:**
+- **Full Test Suite:** 1,285 passed, 12 skipped, 64 warnings
+- **Targeted Test Suites:**
+  - `tests/unit/test_migrations.py` (15 passed: reversible SQLite & PostgreSQL upgrades/downgrades for `0007_workspaces_and_annotations`)
+  - `tests/unit/test_workspace_service.py` (7 passed: workspace CRUD, host isolation, ownership permissions, configuration persistence)
+  - `tests/unit/test_evidence_annotations.py` (7 passed: tag creation and updates, duplication rejection, polymorphic evidence association, analyst notes, source immutability)
+  - `tests/unit/test_entity_graph.py` (8 passed: initial graph construction, bounded expansion, snapshot expansion, cross-host isolation, relationship provenance, entity pivoting)
+  - `tests/unit/test_advanced_search.py` (9 passed: multi-entity query matching, snapshot searching, tag filtering, command/severity filters, path prefix, time windowing, deterministic pagination)
+  - `tests/unit/test_api_workspaces.py` (8 passed: unauthenticated 401, RBAC 403 for viewers on mutations, cross-host 400 rejection, incident host auto-derivation, privacy isolation)
+  - `tests/unit/test_api_graph.py` (5 passed: initial host graph, node expansion, snapshot expansion, cross-entity pivots)
+  - `tests/unit/test_api_search.py` (4 passed: quick text search, multi-criteria advanced search, snapshot filtering)
+  - `tests/unit/test_api_annotations.py` (9 passed: tag CRUD and updates, viewer RBAC enforcement, tag association/disassociation, evidence annotations queries, analyst notes lifecycle)
+  - `tests/unit/test_workspace_view_contract.py` (10 passed: asset serving, DOM structure, unified view layouts, security boundaries, JavaScriptCore syntax)
 
 ---
 
@@ -487,7 +507,7 @@ Phase 2: Reconstruct & Detect
   2.4 Detection Engine                                  ← Completed
   2.5 File Integrity Monitoring                         ← Completed
   2.6 Alert & Incident Management                       ← Completed
-  2.7 Investigation Interface
+  2.7 Investigation Interface                           ← Completed
   2.8 Database Enhancements
 ```
 
