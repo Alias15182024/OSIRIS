@@ -41,20 +41,20 @@ with testing checkpoints to validate correctness before proceeding.
 
 ---
 
-### Milestone 1.2 — Database Setup
+### Milestone 1.2 — Database Setup (Completed)
 
 **Goal:** Create the PostgreSQL schema for Phase 1 entities.
 
-- [ ] Alembic initialization and configuration
-- [ ] Host table migration
-- [ ] Linux User table migration
-- [ ] Process table migration
-- [ ] File table migration
-- [ ] Resource Snapshot table migration
-- [ ] Event table migration (including `process_id` FK)
-- [ ] Application User table migration
-- [ ] Application Audit Log table migration
-- [ ] Seed data: default host, default admin user
+- [x] Alembic initialization and configuration
+- [x] Host table migration
+- [x] Linux User table migration
+- [x] Process table migration
+- [x] File table migration
+- [x] Resource Snapshot table migration
+- [x] Event table migration (including `process_id` FK)
+- [x] Application User table migration
+- [x] Application Audit Log table migration
+- [x] Seed data: default host, default admin user
 
 > **Note:** Session table is deferred to Phase 2 — it requires the
 > Security/System Log Collector for authentication/login data.
@@ -66,20 +66,20 @@ with testing checkpoints to validate correctness before proceeding.
 
 ---
 
-### Milestone 1.3 — Event Processing
+### Milestone 1.3 — Event Processing (Completed)
 
 **Goal:** Implement the authoritative event normalization and storage pipeline.
 
 The Event Processing Layer is the single authority for validation,
 normalization, timestamp conversion, enrichment, and event ID assignment.
 
-- [ ] Event validation logic (required field checks)
-- [ ] UUID assignment for events (`event_id`)
-- [ ] Timestamp normalization (to UTC)
-- [ ] Enrichment: UID → username resolution
-- [ ] Enrichment: PID → `process_id` resolution (OSIRIS internal identity)
-- [ ] Event storage service (insert common events into PostgreSQL)
-- [ ] Batch event ingestion
+- [x] Event validation logic (required field checks)
+- [x] UUID assignment for events (`event_id`)
+- [x] Timestamp normalization (to UTC)
+- [x] Enrichment: UID → username resolution
+- [x] Enrichment: PID → `process_id` resolution (OSIRIS internal identity)
+- [x] Event storage service (insert common events into PostgreSQL)
+- [x] Batch event ingestion
 
 **Testing Checkpoint:**
 - Valid events are stored correctly

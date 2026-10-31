@@ -59,3 +59,61 @@ Security Analysis
 Alerts
      ↓
 Incident Investigation
+```
+
+---
+
+## Quickstart & Execution
+
+### 1. Prerequisites
+- Python 3.11+
+- PostgreSQL 14+ (or SQLite fallback for isolated testing)
+
+### 2. Environment Setup
+```bash
+# Clone and enter directory
+cd OSIRIS
+
+# Create and activate virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install core and development dependencies
+pip install -r requirements.txt
+pip install -r requirements-dev.txt
+
+# Configure environment variables
+cp .env.example .env
+# Edit .env with your PostgreSQL credentials and secure secret key
+```
+
+### 3. Database Migration & Seeding
+```bash
+# Apply canonical Alembic migrations (0001 through 0008)
+alembic upgrade head
+
+# Insert Phase 1 baseline development seed data (optional)
+python -m database.seeds.seed_phase1
+```
+
+### 4. Running the Application
+```bash
+# Start backend API and SPA dashboard on http://127.0.0.1:8000
+uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+### 5. Running the Full Test Suite
+```bash
+pytest -v
+```
+
+---
+
+## Submission Documentation
+
+- **[Final Completion Report](docs/OSIRIS_FINAL_COMPLETION_REPORT.md)**: Comprehensive project overview, Phase 1 & Phase 2 architecture, full migration audit, security review, benchmark reproducibility, and submission verdict.
+- **[Project Demonstration Guide](docs/OSIRIS_PROJECT_DEMO_GUIDE.md)**: Step-by-step walkthrough of the end-to-end incident investigation workflow (*Operation DarkLoom*), demo account configuration, API catalog, and verification flows.
+- **[System Architecture](docs/architecture.md)**: Layered component architecture and dataflow pipeline.
+- **[Database Design](docs/database-design.md)**: Relational schema, indexes, forensic views, and triggers.
+- **[Detection Engine](docs/detection-engine.md)**: Declarative rule evaluation and temporal sequence correlator.
+- **[Development Roadmap](docs/development-roadmap.md)**: Phased implementation tracking and validation records.
